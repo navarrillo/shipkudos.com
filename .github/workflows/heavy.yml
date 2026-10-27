@@ -55,6 +55,7 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Check compiled runtime contents
         run: |
+          docker image ls shipkudos:test
           docker image inspect shipkudos:test --format 'Runtime image size: {{.Size}} bytes'
           docker run --rm --entrypoint node shipkudos:test --input-type=module -e '
             import assert from "node:assert/strict";
