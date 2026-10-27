@@ -7,7 +7,10 @@ previous_image=$(state get current image 2>/dev/null || true)
 previous_sha=$(state get current sha 2>/dev/null || true)
 export APP_SHA=$target APP_IMAGE="$IMAGE_REPO:$target"
 docker pull "$APP_IMAGE"
-digest=$(docker image inspect "$APP_IMAGE" --format '{{index .RepoDigests 0}}')
+digest=''
+while IFS= read -r candidate; do
+  if [[ "$candidate" == "$IMAGE_REPO@sha256:"* ]]; then digest=$candidate; break; fi
+done < <(docker image inspect "$APP_IMAGE" --format '{{range .RepoDigests}}{{println .}}{{end}}')
 [[ "$digest" == "$IMAGE_REPO@sha256:"* ]] || { echo 'Unexpected image digest' >&2; exit 1; }
 export APP_IMAGE=$digest
 if ! dc ps --status running --services | grep -qx postgres; then dc up -d --no-deps postgres; fi

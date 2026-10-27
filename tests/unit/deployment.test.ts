@@ -33,7 +33,7 @@ function fixture() {
   );
   writeFileSync(
     join(dir, "bin", "docker"),
-    `#!/usr/bin/env bash\nset -eu\nprintf '%s | %s\\n' "$*" "${"$"}{APP_SHA:-}" >> "$STUB_DIR/commands.log"\nif [[ "$1" == pull ]];then [[ "${"$"}{FAIL_PULL:-0}" != 1 ]];exit;fi\nif [[ "$1 $2" == 'image inspect' ]];then echo "$IMAGE_REPO@sha256:${"b".repeat(64)}";exit;fi\nif [[ "$*" == *'ps --status running --services'* ]];then echo postgres;exit;fi\nif [[ "$*" == *'run --rm -T --no-deps migrate'* ]];then if [[ "${"$"}{HOLD_MIGRATION:-0}" == 1 ]];then /bin/sleep 1;fi;[[ "${"$"}{FAIL_MIGRATION:-0}" != 1 ]];exit;fi\nif [[ "$*" == *'--force-recreate web worker'* ]];then printf '%s' "$APP_SHA" > "$STUB_DIR/running";fi\n`,
+    `#!/usr/bin/env bash\nset -eu\nprintf '%s | %s\\n' "$*" "${"$"}{APP_SHA:-}" >> "$STUB_DIR/commands.log"\nif [[ "$1" == pull ]];then [[ "${"$"}{FAIL_PULL:-0}" != 1 ]];exit;fi\nif [[ "$1 $2" == 'image inspect' ]];then echo "docker.io/library/another-tag@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";echo "$IMAGE_REPO@sha256:${"b".repeat(64)}";exit;fi\nif [[ "$*" == *'ps --status running --services'* ]];then echo postgres;exit;fi\nif [[ "$*" == *'run --rm -T --no-deps migrate'* ]];then if [[ "${"$"}{HOLD_MIGRATION:-0}" == 1 ]];then /bin/sleep 1;fi;[[ "${"$"}{FAIL_MIGRATION:-0}" != 1 ]];exit;fi\nif [[ "$*" == *'--force-recreate web worker'* ]];then printf '%s' "$APP_SHA" > "$STUB_DIR/running";fi\n`,
     { mode: 0o755 },
   );
   writeFileSync(
@@ -85,6 +85,9 @@ describe("release recovery", () => {
       r = f.run("deploy");
     expect(r.status, r.stderr).toBe(0);
     expect(f.state().history.at(-1).sha).toBe(f.next);
+    expect(f.state().history.at(-1).image).toBe(
+      "ghcr.io/example/shipkudos@sha256:" + "b".repeat(64),
+    );
     expect(
       f
         .commands()
