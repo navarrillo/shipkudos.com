@@ -2,20 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Command, ArrowUpRight } from "lucide-react";
 import { config } from "@/lib/config";
+import { rootMetadata } from "@/lib/seo";
 import "./globals.css";
 export const dynamic = "force-dynamic";
 export function generateMetadata(): Metadata {
-  const env = config();
-  return {
-    metadataBase: new URL(env.APP_URL),
-    title: {
-      default: `${env.APP_NAME} — Your work, in public.`,
-      template: `%s · ${env.APP_NAME}`,
-    },
-    description:
-      "A public activity leaderboard for people building with agents. Connect GitHub. Show your progress. Earn your place.",
-    robots: { index: true, follow: true },
-  };
+  return rootMetadata();
 }
 export default function Layout({ children }: { children: React.ReactNode }) {
   const name = config().APP_NAME;

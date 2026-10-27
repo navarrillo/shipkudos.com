@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { config } from "@/lib/config";
+import { canonicalUrl } from "@/lib/seo";
 import { sql } from "@/db";
 export const dynamic = "force-dynamic";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -18,7 +19,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     ...routes,
     ...profiles.map((p) => ({
-      url: `${base}/u/${p.login}`,
+      url: canonicalUrl(
+        `/u/${encodeURIComponent(String(p.login).toLowerCase())}`,
+      ),
       lastModified: p.last_sync_at || undefined,
     })),
   ];

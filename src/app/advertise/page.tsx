@@ -1,5 +1,9 @@
+import type { Metadata } from "next";
 import { LeadForm } from "@/components/lead-form";
-export const metadata = { title: "Advertise" };
+import { advertiseMetadata } from "@/lib/seo";
+export function generateMetadata(): Metadata {
+  return advertiseMetadata();
+}
 export default function Advertise() {
   return (
     <>
