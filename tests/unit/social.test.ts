@@ -10,6 +10,7 @@ import {
   withSocial,
 } from "../../src/lib/social";
 import robots from "../../src/app/robots";
+import { avatarBufferToDataUri } from "../../src/lib/avatar-image";
 import { generateMetadata as homePageMetadata } from "../../src/app/page";
 import { generateMetadata as profilePageMetadata } from "../../src/app/u/[login]/page";
 
@@ -174,6 +175,21 @@ describe("default card fallback", () => {
     const ok = await socialCardResponse(rendered);
     expect(ok.headers.get("cache-control")).toBe("public, max-age=300");
     expect(Buffer.from(await ok.arrayBuffer())).toEqual(Buffer.from(rendered));
+  });
+  it("turns a WebP avatar into a PNG data URI that the card renderer can draw", async () => {
+    const webp = await sharp({
+      create: { width: 32, height: 32, channels: 3, background: "#b9f36a" },
+    })
+      .webp()
+      .toBuffer();
+    const uri = await avatarBufferToDataUri(webp);
+    expect(uri.startsWith("data:image/png;base64,")).toBe(true);
+    const meta = await sharp(
+      Buffer.from(uri.slice("data:image/png;base64,".length), "base64"),
+    ).metadata();
+    expect(meta.format).toBe("png");
+    expect(meta.width).toBe(128);
+    expect(meta.height).toBe(128);
   });
   it("lets crawlers fetch profile cards while the rest of the API stays private", () => {
     const text = resolveRobots(robots());

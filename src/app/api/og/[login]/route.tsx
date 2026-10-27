@@ -1,11 +1,11 @@
 import { ImageResponse } from "next/og";
-import sharp from "sharp";
 import { cachedPublicProfile } from "@/lib/data";
 import { config } from "@/lib/config";
 import { socialImages } from "@/lib/social-image";
 import { socialCardResponse } from "@/lib/social";
 import { cardFonts, last30Scores, ProfileCard } from "@/lib/profile-card";
 import { shareStats } from "@/lib/share";
+import { avatarBufferToDataUri } from "@/lib/avatar-image";
 export const runtime = "nodejs";
 
 async function avatarPng(urlValue: string | null) {
@@ -22,11 +22,7 @@ async function avatarPng(urlValue: string | null) {
     if (Number(response.headers.get("content-length") || 0) > 1048576) return null;
     const input = await response.arrayBuffer();
     if (input.byteLength > 1048576) return null;
-    const png = await sharp(input, { limitInputPixels: 1000000 })
-      .resize(128, 128)
-      .png()
-      .toBuffer();
-    return `data:image/png;base64,${png.toString("base64")}`;
+    return await avatarBufferToDataUri(input);
   } catch {
     return null;
   }
