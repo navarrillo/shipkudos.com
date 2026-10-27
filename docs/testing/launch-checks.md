@@ -16,6 +16,7 @@ Create one development app and one production app. Do not reuse credentials betw
 - Webhook URL: `APP_URL/api/github/webhook`, with its own random webhook secret.
 - Put the client id, client secret, and webhook secret only in that instance's external environment file.
 - Confirm each environment can open the GitHub authorization screen.
+- Confirm production `APP_URL=https://shipkudos.com`.
 
 ## Revocation, consent, and public activity
 

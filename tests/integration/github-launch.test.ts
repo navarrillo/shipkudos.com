@@ -311,7 +311,7 @@ describe("public contribution sync and publication consent", () => {
       );
       expect(untouchedStats.commits).toBe(9);
       github.graphql.mockImplementation(async (query: string) => {
-        expect(query).toContain("restrictedContributionsCount");
+        expect(query).not.toContain("restrictedContributionsCount");
         expect(query).toContain("isPrivate");
         expect(query).toContain("visibility");
         expect(query).not.toContain("nameWithOwner");
@@ -428,6 +428,62 @@ describe("public contribution sync and publication consent", () => {
       spy.mockRestore();
       await sql("DELETE FROM auth_user WHERE id=$1", [published.id]);
       await sql("DELETE FROM auth_user WHERE id=$1", [unpublished.id]);
+    }
+  });
+  it("keeps reconnect when revocation arrives during sync", async () => {
+    const user = await insertUser(true);
+    try {
+      github.graphql.mockImplementation(async (query: string) => {
+        const body = JSON.stringify({
+          action: "revoked",
+          sender: { id: Number(user.githubId) },
+        });
+        const response = await postWebhook(
+          body,
+          "github_app_authorization",
+          sign(body),
+        );
+        expect(response.status).toBe(200);
+        const days: Record<string, ReturnType<typeof dayPayload>> = {};
+        for (const match of query.matchAll(/\bd(\d+):/g))
+          days[`d${match[1]}`] = dayPayload(Number(match[1]));
+        return {
+          rateLimit: {
+            cost: 1,
+            remaining: 4000,
+            resetAt: new Date().toISOString(),
+          },
+          user: days,
+        };
+      });
+      github.getAuthenticated.mockResolvedValue({
+        data: {
+          id: Number(user.githubId),
+          login: user.login,
+          name: "Public Name",
+          avatar_url: "https://avatars.githubusercontent.com/u/1",
+          bio: "public bio",
+          type: "User",
+        },
+      });
+      expect(await syncGitHub(user.id)).toBe(true);
+      const [profile] = await sql(
+        "SELECT sync_state,sync_error FROM profiles WHERE id=$1",
+        [user.id],
+      );
+      expect(profile).toEqual({
+        sync_state: "reconnect",
+        sync_error: "reconnect_required",
+      });
+      const [run] = await sql(
+        "SELECT state FROM sync_runs WHERE profile_id=$1 ORDER BY started_at DESC",
+        [user.id],
+      );
+      expect(run.state).toBe("completed");
+    } finally {
+      github.graphql.mockReset();
+      github.getAuthenticated.mockReset();
+      await sql("DELETE FROM auth_user WHERE id=$1", [user.id]);
     }
   });
 });

@@ -72,7 +72,12 @@ export function publicCounters(input: Record<string, unknown>): Counts {
       group.length >= PUBLIC_REPOSITORY_LIMIT &&
       publicSum + privateSum < counts[key]
     )
-      throw new Error("github_partial_response");
+      console.log(
+        JSON.stringify({
+          event: "github_truncated_contributions",
+          category: key,
+        }),
+      );
     counts[key] = publicSum;
   }
   return counts;

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   activity,
   PUBLIC_REPOSITORY_LIMIT,
@@ -103,19 +103,68 @@ describe("upstream and campaign boundaries", () => {
       }),
     ).toMatchObject({ commits: 10 });
   });
-  it("refuses a truncated repository list that can still hide private activity", () => {
+  it("keeps the public sum when a 100-repository list cannot be reconciled", () => {
     const repos = Array.from({ length: PUBLIC_REPOSITORY_LIMIT }, (_, index) =>
-      repo(index === 0, index === 0 ? "PRIVATE" : "PUBLIC", 1),
+      repo(
+        index === 0,
+        index === 0 ? "PRIVATE" : "PUBLIC",
+        1,
+        "secret/hidden-repo",
+      ),
     );
-    expect(() =>
-      publicCounters({
-        totalCommitContributions: 1000,
-        totalPullRequestContributions: 0,
-        totalIssueContributions: 0,
-        totalPullRequestReviewContributions: 0,
-        commitContributionsByRepository: repos,
-      }),
-    ).toThrow("github_partial_response");
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((line) => {
+      logs.push(String(line));
+    });
+    try {
+      expect(
+        publicCounters({
+          totalCommitContributions: 1000,
+          totalPullRequestContributions: 0,
+          totalIssueContributions: 0,
+          totalPullRequestReviewContributions: 0,
+          commitContributionsByRepository: repos,
+        }),
+      ).toMatchObject({ commits: 99 });
+      expect(logs).toEqual([
+        JSON.stringify({
+          event: "github_truncated_contributions",
+          category: "commits",
+        }),
+      ]);
+      expect(logs.join("\n")).not.toContain("hidden-repo");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it("accepts exactly 100 repositories when public plus private equals the total", () => {
+    const repos = Array.from({ length: PUBLIC_REPOSITORY_LIMIT }, (_, index) =>
+      repo(
+        index < 40,
+        index < 40 ? "PRIVATE" : "PUBLIC",
+        2,
+        `owner/repo-${index}`,
+      ),
+    );
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((line) => {
+      logs.push(String(line));
+    });
+    try {
+      expect(
+        publicCounters({
+          totalCommitContributions: 200,
+          totalPullRequestContributions: 0,
+          totalIssueContributions: 0,
+          totalPullRequestReviewContributions: 0,
+          commitContributionsByRepository: repos,
+        }),
+      ).toMatchObject({ commits: 120 });
+      expect(logs.join("\n")).not.toContain("github_truncated_contributions");
+      expect(logs.join("\n")).not.toContain("owner/repo-");
+    } finally {
+      spy.mockRestore();
+    }
   });
   it("rejects partial counter responses instead of replacing good data with zeros", () => {
     expect(() => publicCounters({ totalCommitContributions: 3 })).toThrow(
