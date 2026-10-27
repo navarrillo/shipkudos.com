@@ -1,12 +1,13 @@
 name: Checks
 on:
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
   pull-requests: read
 concurrency:
-  group: pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: checks-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   quick:
     runs-on: ubuntu-latest
@@ -20,12 +21,14 @@ jobs:
       - run: npm ci --prefer-offline --no-audit --no-fund
       - run: npm run lint && npm run typecheck && npm test
   changes:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     outputs:
       infrastructure: ${{ steps.paths.outputs.infrastructure }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
         id: paths
         with:
           filters: |
@@ -34,11 +37,11 @@ jobs:
               - '**/*compose*.yml'
               - '**/*compose*.yaml'
               - 'bin/**'
-              - '*.caddy'
+              - 'migrations/**'
               - '.github/workflows/**'
   heavy:
     needs: [quick, changes]
-    if: needs.changes.outputs.infrastructure == 'true'
+    if: ${{ !failure() && !cancelled() && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.infrastructure == 'true') }}
     uses: ./.github/workflows/heavy.yml
     with:
       publish: false
