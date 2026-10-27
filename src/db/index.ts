@@ -11,7 +11,7 @@ export function getPool() {
     connectionTimeoutMillis: 3000,
     idleTimeoutMillis: 30000,
     statement_timeout: 10000,
-    application_name: "shipclout",
+    application_name: "shipkudos",
     options: "-c timezone=UTC",
   });
   return pool;
