@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { revalidateTag } from "next/cache";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { getAuth } from "./auth";
@@ -386,11 +386,17 @@ export const dispatch = route(async (request: Request) => {
       const { hashSecret } = await import("./crypto");
       const name = `${hashSecret(buffer.toString("base64"))}.webp`;
       await mkdir(config().UPLOADS_DIR, { recursive: true });
-      await writeFile(path.join(config().UPLOADS_DIR, name), buffer, {
-        flag: "wx",
-      }).catch((e: NodeJS.ErrnoException) => {
-        if (e.code !== "EEXIST") throw e;
-      });
+      const temporary = path.join(
+        config().UPLOADS_DIR,
+        `.upload-${crypto.randomUUID()}`,
+      );
+      try {
+        await writeFile(temporary, buffer, { flag: "wx" });
+        // The content hash names identical bytes; readers only see complete files.
+        await rename(temporary, path.join(config().UPLOADS_DIR, name));
+      } finally {
+        await rm(temporary, { force: true });
+      }
       return json({ image: name });
     }
     if (endpoint === "admin/leads" && method === "PATCH") {

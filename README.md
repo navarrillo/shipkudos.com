@@ -44,6 +44,8 @@ GitHub verification means account control, not proof of AI authorship. Tool choi
 
 Activity is the sum of public commit, opened-PR, opened-issue and review contribution counters, aggregated by UTC day. Private/restricted totals, stars, followers and lines changed are excluded. Periods are 7 and 30 days; equal scores share position. Only published accounts with a successful synchronization in the last 48 hours are ranked. Data and streak history cover 60 days.
 
+Social cards are 1200 × 630 PNGs with a five-minute cache bounded to 64 entries / 16 MiB per web process. At most two different cards render simultaneously; duplicate requests share work and excess uncached requests receive `503` with `Retry-After`. Avatar fetching is optional, restricted to GitHub's avatar host and times out after two seconds.
+
 The worker prioritizes initial syncs, refreshes active participants every six hours and others daily, reconciles full history weekly, and rebuilds snapshots every 15 minutes. Manual and agent update requests share a one-hour cooldown per person. A failed or partial response does not erase good data.
 
 Agent instructions: `/agents` and `/agents.md`; discovery: `/llms.txt`; REST specification: `/openapi.json`.

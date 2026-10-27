@@ -25,4 +25,4 @@ jobs:
           git merge-base --is-ancestor "$sha" origin/main
           [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           image="${IMAGE,,}"
-          docker buildx imagetools create --tag "$image:$GITHUB_REF_NAME" "$image:$sha"
+          docker buildx imagetools create --prefer-index=false --tag "$image:$GITHUB_REF_NAME" "$image:$sha"
