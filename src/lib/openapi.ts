@@ -1,5 +1,9 @@
 import { SCOPES } from "./domain";
-import { PUBLIC_PROFILE_FIELDS, shareLinks } from "./data";
+import {
+  PUBLIC_LEADERBOARD_FIELDS,
+  PUBLIC_PROFILE_FIELDS,
+  shareLinks,
+} from "./data";
 import {
   REGISTRATION_EXCHANGE_MS,
   REGISTRATION_GLOBAL_LIMIT,
@@ -42,6 +46,23 @@ const profileProperties: Record<
   x_handle: { type: "string" },
   published_at: { type: ["string", "null"], format: "date-time" },
   last_sync_at: { type: ["string", "null"], format: "date-time" },
+};
+const leaderboardProperties: Record<
+  (typeof PUBLIC_LEADERBOARD_FIELDS)[number],
+  Record<string, unknown>
+> = {
+  login: { type: "string" },
+  name: { type: "string" },
+  avatar: { type: ["string", "null"] },
+  tools: { type: "array", items: { type: "string" } },
+  last_sync_at: { type: ["string", "null"], format: "date-time" },
+  position: { type: "integer" },
+  score: { type: "integer" },
+  commits: { type: "integer" },
+  prs: { type: "integer" },
+  issues: { type: "integer" },
+  reviews: { type: "integer" },
+  active_days: { type: "integer" },
 };
 
 const idParameter = {
@@ -125,6 +146,8 @@ export function agentOpenApi(appUrl: string, appName: string) {
                 "expired",
                 "completed",
               ],
+              description:
+                "After the deadline, pending, approved and rejected are reported as expired. completed stays completed.",
             },
             expiresAt: {
               type: "string",
@@ -239,6 +262,32 @@ export function agentOpenApi(appUrl: string, appName: string) {
             },
           },
         },
+        PublicLeaderboard: {
+          type: "object",
+          additionalProperties: false,
+          required: ["entries", "snapshot", "nextCursor"],
+          properties: {
+            entries: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: [...PUBLIC_LEADERBOARD_FIELDS],
+                properties: leaderboardProperties,
+              },
+            },
+            snapshot: {
+              type: ["object", "null"],
+              additionalProperties: false,
+              required: ["id", "created_at"],
+              properties: {
+                id: { type: "string", format: "uuid" },
+                created_at: { type: "string", format: "date-time" },
+              },
+            },
+            nextCursor: { type: ["string", "null"] },
+          },
+        },
       },
     },
     paths: {
@@ -255,7 +304,7 @@ export function agentOpenApi(appUrl: string, appName: string) {
               "invalid_request when the JSON is malformed or fails validation. missing_body when the body is absent.",
             ),
             "429": failure(
-              `rate_limited. More than ${REGISTRATION_IP_LIMIT} creations in ${REGISTRATION_IP_WINDOW_SECONDS} seconds for this client IP, or more than ${REGISTRATION_GLOBAL_LIMIT} in ${REGISTRATION_GLOBAL_WINDOW_SECONDS} seconds for all clients.`,
+              `rate_limited. More than ${REGISTRATION_IP_LIMIT} creations in ${REGISTRATION_IP_WINDOW_SECONDS} seconds for one IPv4 address or one IPv6 /64, or more than ${REGISTRATION_GLOBAL_LIMIT} in ${REGISTRATION_GLOBAL_WINDOW_SECONDS} seconds for all clients.`,
               true,
             ),
           },
@@ -366,6 +415,72 @@ export function agentOpenApi(appUrl: string, appName: string) {
             true,
           ),
         }),
+      },
+      "/api/leaderboard": {
+        get: operation(
+          "Read the public leaderboard",
+          false,
+          {
+            "200": json(
+              "PublicLeaderboard",
+              "Participating builders. Entries contain only public fields.",
+            ),
+            "400": failure(
+              "invalid_request. period is not 7 or 30, or q is longer than 80 characters.",
+            ),
+            "409": failure(
+              "ranking_updated_restart_pagination. The cursor does not match this period, search, or snapshot. Start again without a cursor.",
+            ),
+          },
+          {
+            parameters: [
+              {
+                name: "period",
+                in: "query",
+                required: false,
+                schema: { type: "string", enum: ["7", "30"], default: "7" },
+              },
+              {
+                name: "q",
+                in: "query",
+                required: false,
+                schema: { type: "string", maxLength: 80, default: "" },
+              },
+              {
+                name: "cursor",
+                in: "query",
+                required: false,
+                schema: { type: "string" },
+              },
+            ],
+          },
+        ),
+      },
+      "/api/profiles/{login}": {
+        get: operation(
+          "Read one public profile",
+          false,
+          {
+            "200": json(
+              "PublicProfile",
+              "Public profile fields only.",
+            ),
+            "400": failure(
+              "invalid_request. login is not 1–39 letters, digits or hyphens.",
+            ),
+            "404": failure("profile_not_found. No published visible profile has this login."),
+          },
+          {
+            parameters: [
+              {
+                name: "login",
+                in: "path",
+                required: true,
+                schema: { type: "string", pattern: "^[A-Za-z0-9-]{1,39}$" },
+              },
+            ],
+          },
+        ),
       },
       "/api/v1/me/share": {
         get: operation(

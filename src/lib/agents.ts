@@ -11,9 +11,9 @@ export const REGISTRATION_PENDING_MS = 60 * 60 * 1000;
 /** Fresh exchange window starting at approval, independent of the pending deadline. */
 export const REGISTRATION_EXCHANGE_MS = 10 * 60 * 1000;
 export const REGISTRATION_POLL_INTERVAL_SECONDS = 5;
-export const REGISTRATION_IP_LIMIT = 100;
+export const REGISTRATION_IP_LIMIT = 300;
 export const REGISTRATION_IP_WINDOW_SECONDS = 60 * 60;
-export const REGISTRATION_GLOBAL_LIMIT = 1000;
+export const REGISTRATION_GLOBAL_LIMIT = 10000;
 export const REGISTRATION_GLOBAL_WINDOW_SECONDS = 60 * 60;
 
 export const registrationSchema = z.object({

@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sql } from "../../src/db";
-import { rateLimit, retryAfterSeconds, route } from "../../src/lib/http";
+import {
+  clientKey,
+  rateLimit,
+  rateLimitAddress,
+  retryAfterSeconds,
+  route,
+} from "../../src/lib/http";
 import { agentGuide } from "../../src/lib/agent-guide";
 import { agentOpenApi } from "../../src/lib/openapi";
 import { config } from "../../src/lib/config";
@@ -108,13 +114,34 @@ describe("registration lifetime", () => {
 });
 
 describe("registration rate limits", () => {
-  it("allows 100 creations per hour per IP and 1000 per hour globally", () => {
-    expect(REGISTRATION_IP_LIMIT).toBe(100);
-    expect(REGISTRATION_GLOBAL_LIMIT).toBe(1000);
+  it("allows 300 creations per hour per network and 10000 per hour globally", () => {
+    expect(REGISTRATION_IP_LIMIT).toBe(300);
+    expect(REGISTRATION_GLOBAL_LIMIT).toBe(10000);
     expect(registrationRateLimits("hashed-ip")).toEqual([
-      { key: "registration:hashed-ip", limit: 100, seconds: 3600 },
-      { key: "registration:global", limit: 1000, seconds: 3600 },
+      { key: "registration:hashed-ip", limit: 300, seconds: 3600 },
+      { key: "registration:global", limit: 10000, seconds: 3600 },
     ]);
+  });
+  it("groups IPv6 clients by their /64 prefix", () => {
+    const prefix = "2001:0db8:0001:0002";
+    expect(rateLimitAddress("2001:db8:1:2:3:4:5:6")).toBe(prefix);
+    expect(rateLimitAddress("2001:0DB8:0001:0002::ffff")).toBe(prefix);
+    expect(rateLimitAddress("2001:db8:1:2::1")).toBe(prefix);
+    expect(rateLimitAddress("2001:db8:1:3::1")).toBe("2001:0db8:0001:0003");
+    expect(rateLimitAddress("192.0.2.1")).toBe("192.0.2.1");
+    expect(rateLimitAddress("::ffff:192.0.2.1")).toBe("192.0.2.1");
+    expect(rateLimitAddress("::ffff:192.0.2.2")).toBe("192.0.2.2");
+    const from = (address: string) =>
+      new Request("http://localhost", {
+        headers: { "x-forwarded-for": `203.0.113.5, ${address}` },
+      });
+    expect(clientKey(from("2001:db8:1:2::1"))).toBe(
+      clientKey(from("2001:db8:1:2:abcd:ef01::9")),
+    );
+    expect(clientKey(from("2001:db8:1:2::1"))).not.toBe(
+      clientKey(from("2001:db8:1:3::1")),
+    );
+    expect(clientKey(from("192.0.2.1"))).not.toBe(clientKey(from("192.0.2.2")));
   });
   it("computes Retry-After from the remaining fixed window", () => {
     expect(retryAfterSeconds(3600, 3_600_000)).toBe(3600);
@@ -132,6 +159,22 @@ describe("registration rate limits", () => {
     expect(await response.json()).toEqual({ error: "rate_limited" });
     vi.mocked(sql).mockResolvedValueOnce([{ hits: 100 }]);
     await expect(rateLimit("registration:test", 100, 3600)).resolves.toBeUndefined();
+  });
+  it("returns 429 with Retry-After when the global registration bucket is exhausted", async () => {
+    vi.mocked(sql)
+      .mockResolvedValueOnce([{ hits: 1 }])
+      .mockResolvedValueOnce([{ hits: REGISTRATION_GLOBAL_LIMIT + 1 }]);
+    const response = await route(async () => {
+      for (const rule of registrationRateLimits("hashed-ip"))
+        await rateLimit(rule.key, rule.limit, rule.seconds);
+      return new Response("ok");
+    })();
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toMatch(/^[1-9]\d*$/);
+    expect(await response.json()).toEqual({ error: "rate_limited" });
+    const keys = vi.mocked(sql).mock.calls.map((call) => String(call[1]?.[0]));
+    expect(keys[0]).toMatch(/^registration:hashed-ip:/);
+    expect(keys[1]).toMatch(/^registration:global:/);
   });
 });
 
@@ -243,6 +286,18 @@ describe("agent documentation", () => {
     expect(guide).toContain("profile.login");
     expect(guide).toContain(`${REGISTRATION_IP_LIMIT} requests per hour`);
     expect(guide).toContain(`${REGISTRATION_GLOBAL_LIMIT} requests per hour`);
+    expect(guide).toContain(
+      new Date(
+        Date.parse("2026-10-27T23:40:00.000Z") + REGISTRATION_EXCHANGE_MS,
+      ).toISOString(),
+    );
+    expect(guide).toContain("approval time plus 10 minutes");
+    expect(guide).toContain(
+      "After the deadline, a `rejected` registration is reported as `expired`.",
+    );
+    expect(guide).toContain(
+      "unpublished, hidden, or needs a GitHub reconnect",
+    );
     expect(guide).toContain('{"error":"rate_limited"}');
     expect(guide).toContain("Retry-After");
     expect(guide).toContain(JSON.stringify(shareLinks("octocat", 7), null, 2));
@@ -339,5 +394,22 @@ describe("agent documentation", () => {
     expect(spec.components.schemas.PublicProfile.properties.profile.required).toEqual(
       [...PUBLIC_PROFILE_FIELDS],
     );
+    const publicProfile = spec.paths["/api/profiles/{login}"].get.responses;
+    const board = spec.paths["/api/leaderboard"].get.responses;
+    expect(schemaRef(publicProfile["200"].content["application/json"].schema)).toBe(
+      "#/components/schemas/PublicProfile",
+    );
+    expect(publicProfile["400"].description).toContain("invalid_request");
+    expect(publicProfile["404"].description).toContain("profile_not_found");
+    expect(schemaRef(board["200"].content["application/json"].schema)).toBe(
+      "#/components/schemas/PublicLeaderboard",
+    );
+    expect(board["400"].description).toContain("invalid_request");
+    expect(board["409"].description).toContain(
+      "ranking_updated_restart_pagination",
+    );
+    expect(
+      spec.components.schemas.PublicLeaderboard.properties.entries.items.required,
+    ).toEqual([...PUBLIC_LEADERBOARD_FIELDS]);
   });
 });
