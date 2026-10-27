@@ -4,7 +4,7 @@ const config: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["pg", "pg-boss"],
   outputFileTracingIncludes: {
-    "/api/og/[login]": ["./src/assets/fonts/**/*"],
+    "/api/og/[login]": ["./assets/fonts/**/*"],
   },
   experimental: { cpus: 2 },
 };

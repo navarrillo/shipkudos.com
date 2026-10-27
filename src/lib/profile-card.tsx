@@ -7,11 +7,11 @@ const fontFile = (name: string) =>
   readFileSync(fileURLToPath(new URL(name, import.meta.url)));
 
 export const cardFonts = [
-  { name: "Geist", data: fontFile("../assets/fonts/Geist-Regular.ttf"), weight: 400 as const, style: "normal" as const },
-  { name: "Geist", data: fontFile("../assets/fonts/Geist-Medium.ttf"), weight: 500 as const, style: "normal" as const },
-  { name: "Geist", data: fontFile("../assets/fonts/Geist-SemiBold.ttf"), weight: 600 as const, style: "normal" as const },
-  { name: "Geist Mono", data: fontFile("../assets/fonts/GeistMono-Regular.ttf"), weight: 400 as const, style: "normal" as const },
-  { name: "Geist Mono", data: fontFile("../assets/fonts/GeistMono-Medium.ttf"), weight: 500 as const, style: "normal" as const },
+  { name: "Geist", data: fontFile("../../assets/fonts/Geist-Regular.ttf"), weight: 400 as const, style: "normal" as const },
+  { name: "Geist", data: fontFile("../../assets/fonts/Geist-Medium.ttf"), weight: 500 as const, style: "normal" as const },
+  { name: "Geist", data: fontFile("../../assets/fonts/Geist-SemiBold.ttf"), weight: 600 as const, style: "normal" as const },
+  { name: "Geist Mono", data: fontFile("../../assets/fonts/GeistMono-Regular.ttf"), weight: 400 as const, style: "normal" as const },
+  { name: "Geist Mono", data: fontFile("../../assets/fonts/GeistMono-Medium.ttf"), weight: 500 as const, style: "normal" as const },
 ];
 
 const C = {
