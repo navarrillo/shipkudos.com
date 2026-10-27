@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { cachedLeaderboard } from "@/lib/data";
 import { leaderboardMetadata } from "@/lib/seo";
+import { withSocial } from "@/lib/social";
 import { Ranking } from "@/components/ranking";
 import { Ad } from "@/components/ad";
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export async function generateMetadata({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }): Promise<Metadata> {
-  return leaderboardMetadata(await searchParams);
+  return withSocial(leaderboardMetadata(await searchParams));
 }
 export default async function Leaderboard({
   searchParams,

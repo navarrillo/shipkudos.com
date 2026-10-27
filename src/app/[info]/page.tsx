@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { config } from "@/lib/config";
 import { infoMetadata } from "@/lib/seo";
+import { withSocial } from "@/lib/social";
 export function generateStaticParams() {
   return ["methodology", "privacy", "terms"].map((info) => ({ info }));
 }
@@ -85,7 +86,7 @@ export async function generateMetadata({
   params: Promise<{ info: string }>;
 }): Promise<Metadata> {
   const { info } = await params;
-  return infoMetadata(info) ?? { title: "Not found" };
+  return withSocial(infoMetadata(info) ?? { title: "Not found" });
 }
 export default async function Info({
   params,
