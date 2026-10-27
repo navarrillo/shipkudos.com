@@ -117,7 +117,7 @@ export const dispatch = route(async (request: Request) => {
       for (const profile of profiles) {
         await revokeDelegates(profile.id);
         await sql(
-          "UPDATE auth_account SET access_token=NULL,refresh_token=NULL WHERE user_id=$1 AND provider_id='github'",
+          "UPDATE auth_account SET access_token=NULL,refresh_token=NULL,id_token=NULL WHERE user_id=$1 AND provider_id='github'",
           [profile.id],
         );
       }

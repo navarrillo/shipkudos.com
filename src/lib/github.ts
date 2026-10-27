@@ -1,7 +1,13 @@
 import { Octokit } from "octokit";
 import { getPool, sql, transaction } from "../db";
 import { decryptToken, encryptToken } from "./crypto";
-import { daysAgo, dayUTC, publicCounters, type Counts } from "./domain";
+import {
+  daysAgo,
+  dayUTC,
+  PUBLIC_REPOSITORY_LIMIT,
+  publicCounters,
+  type Counts,
+} from "./domain";
 import { revokeDelegates } from "./queue";
 
 export class GitHubDeferred extends Error {
@@ -105,6 +111,8 @@ export async function syncGitHub(profileId: string): Promise<boolean> {
       !profile.last_full_at ||
       new Date(profile.last_full_at).getTime() < Date.now() - 7 * 86400000;
     const rows: ({ day: string } & Counts)[] = [];
+    const repositoryCounts = (name: string) =>
+      `${name}(maxRepositories:${PUBLIC_REPOSITORY_LIMIT}){repository{isPrivate visibility}contributions(first:1){totalCount}}`;
     for (let offset = 0; offset < (full ? 60 : 7); offset += 10) {
       const fields: string[] = [];
       const dates: string[] = [];
@@ -117,21 +125,13 @@ export async function syncGitHub(profileId: string): Promise<boolean> {
           to = new Date(from.getTime() + 86400000 - 1000);
         dates.push(dayUTC(from));
         fields.push(
-          `d${index}: contributionsCollection(from:"${from.toISOString()}",to:"${to.toISOString()}"){totalCommitContributions totalPullRequestContributions totalIssueContributions totalPullRequestReviewContributions}`,
+          `d${index}: contributionsCollection(from:"${from.toISOString()}",to:"${to.toISOString()}"){restrictedContributionsCount totalCommitContributions totalPullRequestContributions totalIssueContributions totalPullRequestReviewContributions ${repositoryCounts("commitContributionsByRepository")} ${repositoryCounts("pullRequestContributionsByRepository")} ${repositoryCounts("issueContributionsByRepository")} ${repositoryCounts("pullRequestReviewContributionsByRepository")}}`,
         );
       }
       await pace();
       const result = await octokit.graphql<{
         rateLimit: { cost: number; remaining: number; resetAt: string };
-        user: Record<
-          string,
-          {
-            totalCommitContributions: number;
-            totalPullRequestContributions: number;
-            totalIssueContributions: number;
-            totalPullRequestReviewContributions: number;
-          }
-        >;
+        user: Record<string, Record<string, unknown>>;
       }>(
         `query($login:String!){rateLimit{cost remaining resetAt} user(login:$login){${fields.join("\n")}}}`,
         {
