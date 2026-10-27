@@ -18,7 +18,7 @@ const content: Record<string, { title: string; sections: [string, string][] }> =
         ],
         [
           "Freshness",
-          "Active builders synchronize every six hours; others daily. We rebuild the leaderboard every 15 minutes. GitHub delays, quotas and errors may postpone an update. We retain the last valid data and show its date. Streaks use the available 60-day history.",
+          "Active builders synchronize every six hours; others daily. A successful sync is included in the next ranking snapshot within a minute, and the board is rebuilt at least every 15 minutes. GitHub delays, quotas and errors may postpone an update. We retain the last valid data and show its date. Streaks use the available 60-day history.",
         ],
         [
           "Identity and agents",

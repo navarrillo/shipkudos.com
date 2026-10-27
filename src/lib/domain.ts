@@ -103,3 +103,15 @@ export function evaluateReadiness(
     return { ok: false, reason: "queue_stalled" };
   return { ok: true, reason: "ok" };
 }
+export const RANKING_PENDING_MESSAGE =
+  "Synced — you'll appear on the leaderboard at the next ranking update (within a minute)";
+/** Published profile whose latest successful sync is not in a ranking snapshot yet. */
+export function awaitingRankingUpdate(
+  publishedAt: string | Date | null,
+  lastSyncAt: string | Date | null,
+  latestSnapshotAt: string | Date | null,
+) {
+  if (!publishedAt || !lastSyncAt) return false;
+  if (!latestSnapshotAt) return true;
+  return new Date(lastSyncAt).getTime() > new Date(latestSnapshotAt).getTime();
+}

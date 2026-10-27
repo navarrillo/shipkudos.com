@@ -34,10 +34,17 @@ export type RankedProfile = Profile & {
 export async function ownProfile(id: string) {
   return (await sql<Profile>("SELECT * FROM profiles WHERE id=$1", [id]))[0];
 }
+export async function latestRankingAt() {
+  const [row] = await sql<{ created_at: Date | null }>(
+    "SELECT max(created_at) AS created_at FROM ranking_snapshots",
+  );
+  return row?.created_at ?? null;
+}
 export async function leaderboard(
   period: number,
   search = "",
   cursor?: string,
+  snapshotId?: string,
 ) {
   if (!process.env.DATABASE_URL)
     return {
@@ -64,7 +71,7 @@ export async function leaderboard(
     throw new HttpError(409, "ranking_updated_restart_pagination");
   const [snapshot] = await sql<{ id: string; created_at: Date }>(
     "SELECT id,created_at FROM ranking_snapshots WHERE period=$2 AND ($1::uuid IS NULL OR id=$1::uuid) ORDER BY created_at DESC LIMIT 1",
-    [decoded?.snapshot || null, period],
+    [decoded?.snapshot || snapshotId || null, period],
   );
   if (!snapshot) {
     if (cursor) throw new HttpError(409, "ranking_updated_restart_pagination");
@@ -99,7 +106,8 @@ export async function leaderboard(
   };
 }
 const cachedDefaultLeaderboard = unstable_cache(
-  (period: number) => leaderboard(period),
+  (period: number, snapshotId: string) =>
+    leaderboard(period, "", undefined, snapshotId),
   ["leaderboard"],
   { revalidate: 60, tags: ["public-data"] },
 );
@@ -109,9 +117,17 @@ export async function cachedLeaderboard(
   cursor?: string,
 ) {
   // Arbitrary searches/cursors must not create an unbounded filesystem cache.
-  return search || cursor
-    ? leaderboard(period, search, cursor)
-    : cachedDefaultLeaderboard(period);
+  if (!process.env.DATABASE_URL || search || cursor)
+    return leaderboard(period, search, cursor);
+  const [latest] = await sql<{ id: string }>(
+    "SELECT id FROM ranking_snapshots WHERE period=$1 ORDER BY created_at DESC LIMIT 1",
+    [period],
+  );
+  // The worker is a separate process, so revalidateTag there cannot expire this
+  // cache. The snapshot id is part of the key: the next request misses and
+  // shows a snapshot as soon as it exists.
+  if (!latest) return leaderboard(period);
+  return cachedDefaultLeaderboard(period, latest.id);
 }
 export async function publicProfile(login: string) {
   if (!process.env.DATABASE_URL) return null;

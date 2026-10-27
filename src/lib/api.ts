@@ -22,6 +22,7 @@ import { sql, getPool, transaction } from "../db";
 import {
   cachedLeaderboard,
   cachedPublicProfile,
+  latestRankingAt,
   ownProfile,
   shareLinks,
 } from "./data";
@@ -183,8 +184,14 @@ export const dispatch = route(async (request: Request) => {
   if (endpoint.startsWith("me")) {
     const user = await sessionUser(request);
     if (method !== "GET") sameOrigin(request);
-    if (endpoint === "me" && method === "GET")
-      return json(await ownProfile(user.id));
+    if (endpoint === "me" && method === "GET") {
+      const profile = await ownProfile(user.id);
+      if (!profile) return json(profile);
+      return json({
+        ...profile,
+        latest_ranking_at: await latestRankingAt(),
+      });
+    }
     if (endpoint === "me" && method === "PATCH") {
       const input = z
         .object({
