@@ -33,7 +33,7 @@ dc exec -T postgres dropdb --force --if-exists --maintenance-db=template1 -U "${
 dc exec -T postgres createdb --maintenance-db=template1 --template=template0 -U "${POSTGRES_USER:-shipkudos}" -- "${POSTGRES_DB:-shipkudos}"
 dc exec -T postgres pg_restore --no-owner --no-acl --exit-on-error -U "${POSTGRES_USER:-shipkudos}" -d "${POSTGRES_DB:-shipkudos}" < "$backup/database.dump"
 mkdir -p "$UPLOADS_DIR"
-tar -xzf "$backup/uploads.tar.gz" --no-same-owner --no-same-permissions -C "$UPLOADS_DIR"
+tar -xzf "$backup/uploads.tar.gz" --unlink-first --no-same-owner --no-same-permissions -C "$UPLOADS_DIR"
 dc exec -T postgres psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-shipkudos}" -d "${POSTGRES_DB:-shipkudos}" -c 'DELETE FROM worker_health'
 activate "$APP_IMAGE" "$APP_SHA"
 check_ready "$APP_SHA"

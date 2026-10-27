@@ -43,10 +43,10 @@ docker push "localhost:15000/shipkudos:$sha"
 bin/deploy "$sha"
 compose() { docker compose --env-file "$ENV_FILE" -f "$root/compose.yaml" "$@"; }
 compose exec -T postgres psql -v ON_ERROR_STOP=1 -U shipkudos -d shipkudos -c "INSERT INTO advertisers(id,name,email) VALUES('00000000-0000-4000-8000-000000000001','Recovery fixture','fixture@example.invalid')"
-printf 'creative-fixture' > "$temp/uploads/example.webp"
+compose exec -T web sh -c 'printf creative-fixture > /app/uploads/example.webp'
 backup=$(bin/backup | tail -n 1)
 compose exec -T postgres psql -v ON_ERROR_STOP=1 -U shipkudos -d shipkudos -c "DELETE FROM advertisers WHERE id='00000000-0000-4000-8000-000000000001'"
-printf 'modified' > "$temp/uploads/example.webp"
+compose exec -T web sh -c 'printf modified > /app/uploads/example.webp'
 bin/restore "$backup"
 test "$(cat "$temp/uploads/example.webp")" = creative-fixture
 test "$(compose exec -T postgres psql -At -U shipkudos -d shipkudos -c "SELECT name FROM advertisers WHERE id='00000000-0000-4000-8000-000000000001'")" = 'Recovery fixture'
