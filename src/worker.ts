@@ -45,7 +45,7 @@ await boss.work<{ profileId: string }>(
 try {
   while (!stopping) {
     const due = await sql(
-      "SELECT id FROM profiles WHERE published_at IS NOT NULL AND hidden_at IS NULL AND sync_state<>'reconnect' AND (next_sync_at IS NULL OR next_sync_at<=now()) ORDER BY last_sync_at NULLS FIRST LIMIT 100",
+      "SELECT id,last_sync_at FROM profiles WHERE published_at IS NOT NULL AND hidden_at IS NULL AND sync_state<>'reconnect' AND (next_sync_at IS NULL OR next_sync_at<=now()) ORDER BY last_sync_at NULLS FIRST LIMIT 100",
     );
     for (const row of due)
       await boss.send(
@@ -81,7 +81,7 @@ try {
       lastClean = Date.now();
     }
     const [queue] = await sql(
-      "SELECT min(start_after) AS oldest FROM pgboss.job WHERE name='github-sync' AND state IN ('created','retry') AND start_after<now()",
+      "SELECT min(start_after) AS oldest FROM pgboss.job WHERE name='github-sync' AND state IN ('created','retry','active') AND start_after<now()",
     );
     await sql(
       `INSERT INTO worker_health(id,instance_id,revision,heartbeat_at,oldest_runnable_at,progress_at) VALUES('main',$1,$2,now(),$3,$4) ON CONFLICT(id) DO UPDATE SET instance_id=excluded.instance_id,revision=excluded.revision,heartbeat_at=now(),oldest_runnable_at=excluded.oldest_runnable_at,progress_at=excluded.progress_at`,

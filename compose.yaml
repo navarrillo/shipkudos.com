@@ -65,7 +65,7 @@ services:
       - ${UPLOADS_DIR:?Set UPLOADS_DIR}:/app/uploads
       - nextcache:/app/.next/cache
     read_only: true
-    tmpfs: [/tmp:size=64m, mode=1777]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     init: true
@@ -93,7 +93,7 @@ services:
       <<: *environment
       DB_POOL_SIZE: "5"
     read_only: true
-    tmpfs: [/tmp:size=32m, mode=1777]
+    tmpfs: ["/tmp:size=32m,mode=1777"]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     init: true
