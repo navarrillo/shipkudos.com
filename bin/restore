@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ $# == 1 && -d $1 ]] || { echo 'Usage: bin/restore <backup-directory>' >&2; exit 2; }
+backup=$(cd -- "$1" && pwd)
+source "$(dirname -- "$0")/common"
+python3 - "$backup" "$IMAGE_REPO" <<'PY'
+import hashlib,json,re,sys,tarfile
+from pathlib import Path
+def checksum(file):
+    h=hashlib.sha256()
+    with open(file,'rb') as stream:
+        for chunk in iter(lambda: stream.read(1024*1024),b''): h.update(chunk)
+    return h.hexdigest()
+p=Path(sys.argv[1]); m=json.loads((p/'manifest.json').read_text())
+assert m['version']==1 and m['postgres']==18
+assert re.fullmatch('[0-9a-f]{40}',m['sha'])
+assert re.fullmatch(re.escape(sys.argv[2])+r'@sha256:[0-9a-f]{64}',m['image'])
+assert set(m['files'])=={'database.dump','uploads.tar.gz'}
+for name,expected_checksum in m['files'].items():
+    assert not (p/name).is_symlink() and checksum(p/name)==expected_checksum, 'Checksum failed'
+with tarfile.open(p/'uploads.tar.gz') as t:
+    for member in t.getmembers():
+        assert member.name == '.' or member.name.startswith('./'), 'Unexpected archive layout'
+        assert not member.name.startswith('/') and '..' not in Path(member.name).parts
+        assert member.isdir() or member.isfile(), 'Unsafe archive entry'
+PY
+export APP_IMAGE=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["image"])' "$backup/manifest.json")
+export APP_SHA=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sha"])' "$backup/manifest.json")
+docker image inspect "$APP_IMAGE" >/dev/null 2>&1 || docker pull "$APP_IMAGE"
+dc stop web worker
+# Restore into an empty project database. --clean cannot reliably drop inherited
+# partition constraints from a live pg-boss schema in PostgreSQL 18.
+dc exec -T postgres dropdb --force --if-exists --maintenance-db=template1 -U "${POSTGRES_USER:-shipkudos}" -- "${POSTGRES_DB:-shipkudos}"
+dc exec -T postgres createdb --maintenance-db=template1 --template=template0 -U "${POSTGRES_USER:-shipkudos}" -- "${POSTGRES_DB:-shipkudos}"
+dc exec -T postgres pg_restore --no-owner --no-acl --exit-on-error -U "${POSTGRES_USER:-shipkudos}" -d "${POSTGRES_DB:-shipkudos}" < "$backup/database.dump"
+mkdir -p "$UPLOADS_DIR"
+# Backups contain ./ paths. Strip that component so unlink-first never targets
+# the mounted uploads directory itself, only its archived files.
+tar -xzf "$backup/uploads.tar.gz" --strip-components=1 --unlink-first --no-same-owner --no-same-permissions -C "$UPLOADS_DIR"
+dc exec -T postgres psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-shipkudos}" -d "${POSTGRES_DB:-shipkudos}" -c 'DELETE FROM worker_health'
+activate "$APP_IMAGE" "$APP_SHA"
+check_ready "$APP_SHA"
+state commit "$APP_SHA" "$APP_IMAGE"
+echo 'Backup restored and application is ready'

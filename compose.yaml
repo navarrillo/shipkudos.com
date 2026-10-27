@@ -1,0 +1,118 @@
+name: ${COMPOSE_PROJECT_NAME:-shipkudos}
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+x-env: &environment
+  NODE_ENV: production
+  APP_NAME: ${APP_NAME:-ShipKudos}
+  APP_URL: ${APP_URL:?Set APP_URL}
+  APP_SHA: ${APP_SHA:-development}
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET}
+  TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?Set TOKEN_ENCRYPTION_KEY}
+  GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?Set GITHUB_CLIENT_ID}
+  GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?Set GITHUB_CLIENT_SECRET}
+  GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?Set GITHUB_WEBHOOK_SECRET}
+  ADMIN_GITHUB_IDS: ${ADMIN_GITHUB_IDS:-}
+  UPLOADS_DIR: /app/uploads
+  WORKER_HEARTBEAT_SECONDS: ${WORKER_HEARTBEAT_SECONDS:-120}
+  QUEUE_STALL_SECONDS: ${QUEUE_STALL_SECONDS:-600}
+services:
+  postgres:
+    image: postgres:18.3-bookworm@sha256:80630f83606d8db77d30b3851b16a9f78be2d0d4dda6f7b82a1fdca5ebe3acba
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-shipkudos}
+      POSTGRES_DB: ${POSTGRES_DB:-shipkudos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/18/docker
+      TZ: UTC
+    command:
+      [
+        postgres,
+        -c,
+        shared_buffers=384MB,
+        -c,
+        work_mem=4MB,
+        -c,
+        maintenance_work_mem=64MB,
+        -c,
+        max_connections=40,
+        -c,
+        timezone=UTC,
+      ]
+    volumes: [pgdata:/var/lib/postgresql]
+    mem_limit: 1536m
+    cpus: 1
+    shm_size: 256m
+    restart: unless-stopped
+    logging: *logging
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+      interval: 10s
+      timeout: 3s
+      retries: 6
+  web:
+    image: ${APP_IMAGE:?Set APP_IMAGE to an immutable release}
+    environment:
+      <<: *environment
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      DB_POOL_SIZE: "8"
+    ports: ["127.0.0.1:${PORT:-8020}:3000"]
+    volumes:
+      - ${UPLOADS_DIR:?Set UPLOADS_DIR}:/app/uploads
+      - nextcache:/app/.next/cache
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    init: true
+    mem_limit: 768m
+    cpus: 0.75
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging: *logging
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          'fetch("http://127.0.0.1:3000/readyz").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))',
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+  worker:
+    image: ${APP_IMAGE:?Set APP_IMAGE}
+    command: [node, --import, tsx, src/worker.ts]
+    environment:
+      <<: *environment
+      DB_POOL_SIZE: "5"
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    init: true
+    mem_limit: 512m
+    cpus: 0.5
+    restart: unless-stopped
+    stop_grace_period: 35s
+    logging: *logging
+  migrate:
+    profiles: [tools]
+    image: ${APP_IMAGE:?Set APP_IMAGE}
+    command: [node, --import, tsx, src/migrate.ts]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?Set TOKEN_ENCRYPTION_KEY}
+    mem_limit: 256m
+    cpus: 0.5
+    restart: "no"
+    logging: *logging
+volumes:
+  pgdata:
+  nextcache:

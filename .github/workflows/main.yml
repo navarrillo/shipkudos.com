@@ -1,0 +1,55 @@
+name: Main release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: production-release
+  queue: max
+  cancel-in-progress: false
+jobs:
+  verify:
+    uses: ./.github/workflows/heavy.yml
+    with:
+      publish: true
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      ENV_FILE: ${{ vars.ENV_FILE }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      RELEASE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure verified SSH transport
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          : "${DEPLOY_HOST:?Set production variable DEPLOY_HOST}"
+          : "${DEPLOY_USER:?Set production variable DEPLOY_USER}"
+          : "${DEPLOY_PATH:?Set production variable DEPLOY_PATH}"
+          : "${ENV_FILE:?Set external ENV_FILE path}"
+          : "${DEPLOY_SSH_KEY:?Set DEPLOY_SSH_KEY secret}"
+          : "${DEPLOY_KNOWN_HOSTS:?Set verified DEPLOY_KNOWN_HOSTS secret}"
+          [[ "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_./-]+$ && "$ENV_FILE" =~ ^/[a-zA-Z0-9_./-]+$ ]]
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Transfer release and deploy exact SHA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          release="$DEPLOY_PATH/releases/$RELEASE_SHA"
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$release'"
+          tar -czf - bin compose.yaml shipclout.caddy | ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "tar -xzf - -C '$release'"
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "ENV_FILE='$ENV_FILE' '$release/bin/deploy' '$RELEASE_SHA'"
