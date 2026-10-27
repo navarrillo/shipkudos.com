@@ -108,6 +108,39 @@ describe("agent enrollment", () => {
       approveRegistration(a.registrationId, id, true),
     ).rejects.toMatchObject({ status: 409 });
   });
+  it("keeps a pending registration for 60 minutes and opens a fresh 10 minute exchange window", async () => {
+    const r = await createRegistration({ name: "Window", platform: "HTTP" });
+    const pendingLeft = new Date(r.expiresAt).getTime() - Date.now();
+    expect(pendingLeft).toBeGreaterThan(59 * 60 * 1000);
+    expect(pendingLeft).toBeLessThanOrEqual(60 * 60 * 1000);
+    await sql(
+      "UPDATE agent_registrations SET expires_at=now()+interval '20 seconds' WHERE id=$1",
+      [r.registrationId],
+    );
+    await approveRegistration(r.registrationId, id, true);
+    const [row] = await sql<{ expires_at: Date; state: string }>(
+      "SELECT state,expires_at FROM agent_registrations WHERE id=$1",
+      [r.registrationId],
+    );
+    expect(row.state).toBe("approved");
+    const exchangeLeft = new Date(row.expires_at).getTime() - Date.now();
+    expect(exchangeLeft).toBeGreaterThan(9 * 60 * 1000);
+    expect(exchangeLeft).toBeLessThanOrEqual(10 * 60 * 1000 + 5000);
+    const status = await registrationStatus(
+      r.registrationId,
+      r.registrationToken,
+    );
+    expect(status.state).toBe("approved");
+    expect(new Date(status.expiresAt).getTime()).toBeGreaterThan(
+      Date.now() + 9 * 60 * 1000,
+    );
+    const grant = await exchangeRegistration(
+      r.registrationId,
+      r.registrationToken,
+    );
+    expect(grant.token.startsWith("sc_")).toBe(true);
+    expect(grant.tokenType).toBe("Bearer");
+  });
 });
 describe("public profile metadata", () => {
   it("builds a canonical profile URL from the configured base", async () => {

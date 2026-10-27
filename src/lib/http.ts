@@ -101,6 +101,9 @@ export function clientKey(request: Request) {
       (config().BETTER_AUTH_SECRET || "development"),
   );
 }
+export function retryAfterSeconds(windowSeconds: number, now = Date.now()) {
+  return windowSeconds - (Math.floor(now / 1000) % windowSeconds);
+}
 export async function rateLimit(key: string, limit: number, seconds: number) {
   const bucket = Math.floor(Date.now() / (seconds * 1000));
   const [row] = await sql(
@@ -108,9 +111,5 @@ export async function rateLimit(key: string, limit: number, seconds: number) {
     [`${key}:${bucket}`, seconds],
   );
   if (row.hits > limit)
-    throw new HttpError(
-      429,
-      "rate_limited",
-      seconds - (Math.floor(Date.now() / 1000) % seconds),
-    );
+    throw new HttpError(429, "rate_limited", retryAfterSeconds(seconds));
 }

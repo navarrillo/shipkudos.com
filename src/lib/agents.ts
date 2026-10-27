@@ -6,16 +6,79 @@ import { randomSecret, hashSecret } from "./crypto";
 import { config } from "./config";
 import { SCOPES, type Scope } from "./domain";
 
+/** How long a registration may stay pending before the owner approves it. */
+export const REGISTRATION_PENDING_MS = 60 * 60 * 1000;
+/** Fresh exchange window starting at approval, independent of the pending deadline. */
+export const REGISTRATION_EXCHANGE_MS = 10 * 60 * 1000;
+export const REGISTRATION_POLL_INTERVAL_SECONDS = 5;
+export const REGISTRATION_IP_LIMIT = 100;
+export const REGISTRATION_IP_WINDOW_SECONDS = 60 * 60;
+export const REGISTRATION_GLOBAL_LIMIT = 1000;
+export const REGISTRATION_GLOBAL_WINDOW_SECONDS = 60 * 60;
+
 export const registrationSchema = z.object({
   name: z.string().trim().min(1).max(80),
   platform: z.string().trim().min(1).max(40),
 });
+export function pendingExpiry(now = Date.now()) {
+  return new Date(now + REGISTRATION_PENDING_MS);
+}
+export function exchangeExpiry(now = Date.now()) {
+  return new Date(now + REGISTRATION_EXCHANGE_MS);
+}
+export function effectiveRegistrationState(
+  state: string,
+  expiresAt: Date | string,
+  now = Date.now(),
+) {
+  return new Date(expiresAt).getTime() <= now && state !== "completed"
+    ? "expired"
+    : state;
+}
+export function canExchangeRegistration(
+  row: { state: string; owner_id: string | null; expires_at: Date | string },
+  now = Date.now(),
+) {
+  return (
+    row.state === "approved" &&
+    Boolean(row.owner_id) &&
+    new Date(row.expires_at).getTime() > now
+  );
+}
+export function registrationRateLimits(ipKey: string) {
+  return [
+    {
+      key: `registration:${ipKey}`,
+      limit: REGISTRATION_IP_LIMIT,
+      seconds: REGISTRATION_IP_WINDOW_SECONDS,
+    },
+    {
+      key: "registration:global",
+      limit: REGISTRATION_GLOBAL_LIMIT,
+      seconds: REGISTRATION_GLOBAL_WINDOW_SECONDS,
+    },
+  ];
+}
+export function authorizationStatusMessage(
+  state: string,
+  expired: boolean,
+  expiresAt: Date,
+) {
+  if (expired || state === "expired")
+    return "This request is expired. Ask your agent to create a new registration and send you the new link.";
+  if (state === "approved")
+    return `This request is approved. Your agent can finish registration until ${expiresAt.toUTCString()}.`;
+  if (state === "completed")
+    return "This request is completed. Your agent already received its key.";
+  if (state === "rejected") return "This request is rejected.";
+  return `This request is ${state}. Ask your agent to check its status or start a new request.`;
+}
 export async function createRegistration(
   input: z.infer<typeof registrationSchema>,
 ) {
   const id = randomUUID(),
     token = `scr_${randomSecret()}`,
-    expires = new Date(Date.now() + 900000);
+    expires = pendingExpiry();
   await sql(
     "INSERT INTO agent_registrations(id,name,platform,token_hash,expires_at) VALUES($1,$2,$3,$4,$5)",
     [id, input.name, input.platform, hashSecret(token), expires],
@@ -25,7 +88,7 @@ export async function createRegistration(
     authorizationUrl: `${config().APP_URL}/agents/authorize/${id}`,
     registrationToken: token,
     expiresAt: expires,
-    interval: 5,
+    interval: REGISTRATION_POLL_INTERVAL_SECONDS,
   };
 }
 export async function registrationStatus(id: string, token: string) {
@@ -37,13 +100,17 @@ export async function registrationStatus(id: string, token: string) {
       [id, hashSecret(token)],
     );
     if (!row) throw new HttpError(401, "invalid_registration_credential");
-    if (row.polled_at && Date.now() - new Date(row.polled_at).getTime() < 5000)
-      throw new HttpError(429, "poll_too_fast", 5);
-    const state =
-      new Date(row.expires_at).getTime() <= Date.now() &&
-      row.state !== "completed"
-        ? "expired"
-        : row.state;
+    if (
+      row.polled_at &&
+      Date.now() - new Date(row.polled_at).getTime() <
+        REGISTRATION_POLL_INTERVAL_SECONDS * 1000
+    )
+      throw new HttpError(
+        429,
+        "poll_too_fast",
+        REGISTRATION_POLL_INTERVAL_SECONDS,
+      );
+    const state = effectiveRegistrationState(row.state, row.expires_at);
     await client.query(
       "UPDATE agent_registrations SET polled_at=now(),state=$2 WHERE id=$1",
       [id, state],
@@ -52,7 +119,7 @@ export async function registrationStatus(id: string, token: string) {
       registrationId: id,
       state,
       expiresAt: row.expires_at,
-      interval: 5,
+      interval: REGISTRATION_POLL_INTERVAL_SECONDS,
     };
   });
 }
@@ -85,8 +152,14 @@ export async function approveRegistration(
     if (profile.sync_state === "reconnect")
       throw new HttpError(409, "github_reconnect_required");
     await client.query(
-      "UPDATE agent_registrations SET state=$2,owner_id=$3 WHERE id=$1",
-      [id, accepted ? "approved" : "rejected", ownerId],
+      "UPDATE agent_registrations SET state=$2,owner_id=$3,expires_at=CASE WHEN $4::boolean THEN $5::timestamptz ELSE expires_at END WHERE id=$1",
+      [
+        id,
+        accepted ? "approved" : "rejected",
+        ownerId,
+        accepted,
+        accepted ? exchangeExpiry() : row.expires_at,
+      ],
     );
     if (accepted)
       await client.query(
@@ -106,11 +179,7 @@ export async function exchangeRegistration(id: string, token: string) {
       [id, hashSecret(token)],
     );
     if (!row) throw new HttpError(401, "invalid_registration_credential");
-    if (
-      row.state !== "approved" ||
-      !row.owner_id ||
-      new Date(row.expires_at).getTime() <= Date.now()
-    )
+    if (!canExchangeRegistration(row))
       throw new HttpError(409, "registration_not_exchangeable");
     const {
       rows: [owner],

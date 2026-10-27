@@ -173,6 +173,111 @@ export async function cachedPublicProfile(login: string) {
   return visible ? existingProfileCache(login.toLowerCase()) : null;
 }
 export { rebuildRankings } from "./rankings";
+export const PUBLIC_PROFILE_FIELDS = [
+  "login",
+  "name",
+  "avatar",
+  "bio",
+  "tools",
+  "x_handle",
+  "published_at",
+  "last_sync_at",
+] as const;
+export const PUBLIC_LEADERBOARD_FIELDS = [
+  "login",
+  "name",
+  "avatar",
+  "tools",
+  "last_sync_at",
+  "position",
+  "score",
+  "commits",
+  "prs",
+  "issues",
+  "reviews",
+  "active_days",
+] as const;
+export type PublicProfileIdentity = Pick<
+  Profile,
+  (typeof PUBLIC_PROFILE_FIELDS)[number]
+>;
+export type PublicLeaderboardEntry = Pick<
+  RankedProfile,
+  (typeof PUBLIC_LEADERBOARD_FIELDS)[number]
+>;
+export function toPublicProfileView(data: {
+  profile: Profile;
+  days: {
+    day: string;
+    commits: number;
+    prs: number;
+    issues: number;
+    reviews: number;
+    score: number;
+  }[];
+  ranks: {
+    period: number;
+    position: number;
+    score: number;
+    active_days: number;
+  }[];
+}) {
+  const profile: PublicProfileIdentity = {
+    login: data.profile.login,
+    name: data.profile.name,
+    avatar: data.profile.avatar,
+    bio: data.profile.bio,
+    tools: data.profile.tools,
+    x_handle: data.profile.x_handle,
+    published_at: data.profile.published_at,
+    last_sync_at: data.profile.last_sync_at,
+  };
+  return {
+    profile,
+    days: data.days.map((day) => ({
+      day: day.day,
+      commits: day.commits,
+      prs: day.prs,
+      issues: day.issues,
+      reviews: day.reviews,
+      score: day.score,
+    })),
+    ranks: data.ranks.map((rank) => ({
+      period: rank.period,
+      position: rank.position,
+      score: rank.score,
+      active_days: rank.active_days,
+    })),
+  };
+}
+export function toPublicLeaderboard(result: {
+  entries: RankedProfile[];
+  snapshot: { id: string; created_at: Date } | null;
+  nextCursor: string | null;
+}) {
+  return {
+    entries: result.entries.map(
+      (entry): PublicLeaderboardEntry => ({
+        login: entry.login,
+        name: entry.name,
+        avatar: entry.avatar,
+        tools: entry.tools,
+        last_sync_at: entry.last_sync_at,
+        position: entry.position,
+        score: entry.score,
+        commits: entry.commits,
+        prs: entry.prs,
+        issues: entry.issues,
+        reviews: entry.reviews,
+        active_days: entry.active_days,
+      }),
+    ),
+    snapshot: result.snapshot
+      ? { id: result.snapshot.id, created_at: result.snapshot.created_at }
+      : null,
+    nextCursor: result.nextCursor,
+  };
+}
 export function shareLinks(login: string, period = 7) {
   const url = `${config().APP_URL}/u/${encodeURIComponent(login)}`;
   return {
