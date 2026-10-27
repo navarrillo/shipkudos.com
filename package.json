@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "next dev --webpack --hostname 127.0.0.1",
-    "build": "next build --webpack && node bin/prepare-standalone.mjs",
+    "build": "next build --webpack && node bin/build-runtime.mjs && node bin/prepare-standalone.mjs",
     "start": "HOSTNAME=127.0.0.1 node .next/standalone/server.js",
     "worker": "tsx src/worker.ts",
     "migrate": "tsx src/migrate.ts",
@@ -37,7 +37,6 @@
     "react-dom": "19.3.1",
     "sharp": "0.35.5",
     "tailwind-merge": "3.7.0",
-    "tsx": "4.23.15",
     "zod": "4.6.7"
   },
   "devDependencies": {
@@ -47,10 +46,12 @@
     "@types/pg": "8.23.1",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.3",
     "prettier": "3.9.10",
     "tailwindcss": "4.3.3",
+    "tsx": "4.23.15",
     "typescript": "6.0.3",
     "vitest": "5.0.5"
   }

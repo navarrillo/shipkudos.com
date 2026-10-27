@@ -6,6 +6,7 @@ export default defineConfig([
   ...ts,
   globalIgnores([
     ".next/**",
+    "dist/**",
     "coverage/**",
     "playwright-report/**",
     "test-results/**",

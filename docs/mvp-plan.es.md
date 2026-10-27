@@ -1,6 +1,6 @@
 # ShipClout: plan completo del MVP funcional
 
-Revisión: 27 de octubre de 2026. Este documento sustituye al plan anterior e incorpora los nueve ajustes de infraestructura, CI y despliegue y el registro asistido por agentes mediante API. Define trabajo por implementar; no acredita que existan todavía la aplicación, los scripts o el despliegue.
+Revisión: 27 de octubre de 2026. Actualización de despliegue: Helios descarga y despliega las releases desde el VPS; Actions verifica y publica la imagen. Este documento sustituye al plan anterior e incorpora los nueve ajustes de infraestructura, CI y despliegue y el registro asistido por agentes mediante API. Define trabajo por implementar; no acredita que existan todavía la aplicación, los scripts o el despliegue.
 
 ## 1. Producto y alcance confirmado
 
@@ -191,20 +191,20 @@ Las operaciones delegadas resuelven siempre al participante desde la credencial;
 | --- | --- | --- | --- | --- | --- | --- |
 | PR normal | Sí | No | No | No | No | No |
 | PR que cambia infraestructura/despliegue | Sí | Sí | Construir y comprobar | No | No | No |
-| Push a `main` | Sí | Sí | Construir y comprobar | Sí | Sí, tras superar comprobaciones | No |
+| Push a `main` | Sí | Sí | Construir y comprobar | Sí | Helios descarga la release validada y ejecuta el despliegue local | No |
 | Tag de versión del commit de `main` | Comprobar procedencia y digest | No repetir | Reutilizar digest publicado | Añadir etiqueta de versión | No repetir | No |
 | `workflow_dispatch` de carga | No obligatorio | No | No | No | No | Sí |
 
 - PR normal: un job ligero con caché del gestor de paquetes, instalación congelada y únicamente lint, typecheck y Vitest. Objetivo medido: menos de 60 segundos con caché caliente, excluyendo espera en la cola de runners. No prometer ese tiempo para colas externas o instalaciones frías.
 - Detectar cambios en Dockerfiles, archivos Compose, `bin/**`, configuración de despliegue/Caddy y workflows. Un cambio en esos archivos activa las comprobaciones pesadas del PR; el resto no.
 - Playwright y pruebas de integración con PostgreSQL se ejecutan en la ruta pesada. k6 se lanza únicamente mediante `workflow_dispatch`, contra la URL elegida, sin ejecutarse por push o PR.
-- Todos los jobs usan runners alojados por GitHub; el VPS recibe el despliegue mediante SSH y no ejecuta un runner self-hosted.
-- Main se procesa de forma serial desde el inicio del workflow de entrega: grupo de concurrencia de producción con `queue: max`, sin cancelar ejecuciones en curso. Evitar que builds terminados fuera de orden desplieguen commits antiguos después de nuevos.
+- Todos los jobs usan runners alojados por GitHub; Helios descarga la imagen validada y ejecuta `bin/deploy <sha>` en el VPS. Actions no almacena claves SSH del servidor y el VPS no ejecuta un runner self-hosted.
+- Main se procesa de forma serial desde el inicio del workflow de entrega: grupo de concurrencia de producción con `queue: max`, sin cancelar ejecuciones en curso. Helios selecciona una release validada y el bloqueo local serializa los despliegues.
 - CI usa `GITHUB_TOKEN` con permiso de escritura de paquetes solo en publicación. Los PR, incluidos forks, no reciben credenciales de producción ni publican imágenes.
 - GHCR público: `ghcr.io/<owner>/shipclout:<sha-completo>`; añadir `vX.Y.Z` a ese mismo digest al versionar. `latest` no participa en despliegue ni rollback.
 - El paquete se configura como público en la preparación inicial. Cada publicación comprueba acceso anónimo usando configuración de Docker sin credenciales antes de autorizar el despliegue. Un repositorio público no basta para garantizar la visibilidad del paquete.
 - Etiquetas OCI con repositorio y revisión. No sobrescribir una etiqueta SHA con un contenido distinto.
-- Actions transfiere los scripts/configuración correspondientes al SHA a un directorio de release y ejecuta `bin/deploy <sha>` por SSH, con host verificado. El `.env` del servidor nunca viaja al runner.
+- Helios utiliza los scripts/configuración del mismo SHA publicado y ejecuta `bin/deploy <sha>` localmente. El `.env` y las credenciales de acceso al servidor permanecen en Helios/VPS.
 
 ## 7. Contrato de deploy y rollback
 
@@ -254,7 +254,7 @@ Las migraciones y el contrato de arranque/configuración deben ser compatibles c
 - Todos los servicios, incluidas tareas puntuales, con logging Docker `json-file`, `max-size: 10m` y `max-file: 3`, mediante configuración compartida de Compose.
 - Sin builds en producción, ni montajes de código fuente o del socket Docker dentro de web/worker.
 
-### `shipclout.caddy`
+### `shipkudos.caddy`
 
 Entregar un archivo independiente para importar desde la configuración existente. Su bloque de dominio tendrá este comportamiento:
 
@@ -310,7 +310,7 @@ Sustituir únicamente el dominio al instalar. No añadir `includeSubDomains` ni 
 - `.env.example` versionado con nombres, comentarios y valores de ejemplo no sensibles; sin contraseñas, tokens, claves ni correos personales reales.
 - Configuración de aplicación, PostgreSQL, OAuth, cifrado de tokens, webhook, IDs administrativos, dominio, rutas, puerto y umbrales de salud en ese archivo.
 - Pasar a cada servicio únicamente sus variables necesarias, aunque procedan de la misma fuente.
-- Excepción de transporte imprescindible para CI/CD: clave SSH del runner en GitHub Actions Secrets y `GITHUB_TOKEN` efímero para publicar; se inyectan como entorno del workflow. Ningún secreto de aplicación se copia a Actions, al contexto Docker o a GHCR.
+- Actions utiliza únicamente `GITHUB_TOKEN` efímero para publicar. El acceso de Helios al VPS y todos los secretos de aplicación permanecen fuera de Actions, del contexto Docker y de GHCR.
 - Estado de releases y logs fuera del repo, sin secretos. `.gitignore` y `.dockerignore` excluyen configuraciones reales, copias y datos.
 
 ### Identidad de commits
@@ -364,10 +364,10 @@ El resultado valida una capacidad concreta, no una promesa de tráfico ilimitado
 - Una persona conecta GitHub, acepta publicar, obtiene datos públicos correctos, aparece en ambos rankings y comparte su perfil.
 - Un agente puede seguir la guía, iniciar el alta de su dueño, completar o delegar la autorización mediante enlace, consultar la sincronización y devolver perfil y tarjeta. El dueño puede revocar su credencial desde el dashboard; no se crea una posición adicional para el agente.
 - El administrador programa una campaña, recibe contactos y consulta resultados.
-- Cada push validado a main produce una imagen pública por SHA y un despliegue automático; un fallo de la nueva aplicación recupera solo la imagen anterior y marca la ejecución como fallida.
+- Cada push validado a main produce una imagen pública por SHA y Helios se encarga de descargarla y ejecutar el despliegue local; un fallo de la nueva aplicación recupera solo la imagen anterior y marca la ejecución como fallida.
 - Un único `/readyz` comprueba base de datos, worker y progreso de cola.
 - Los comandos no interactivos de deploy, rollback, backup y restore están documentados y probados.
-- Preparación inicial documentada: DNS, importación Caddy, `.env` externo, GitHub App, GHCR público y acceso SSH de Actions. Después, los despliegues ordinarios no requieren bots ni intervención manual.
+- Preparación inicial documentada: DNS, importación Caddy, `.env` externo, GitHub App, GHCR público y configuración del pull/despliegue en Helios. Actions verifica y publica; Helios realiza los despliegues desde el servidor.
 
 ## Fuentes técnicas de referencia
 

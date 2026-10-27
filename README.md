@@ -17,7 +17,7 @@ node --env-file=/absolute/path/local.env --import tsx src/worker.ts
 node --env-file=/absolute/path/local.env node_modules/next/dist/bin/next dev --webpack --hostname 127.0.0.1
 ```
 
-`npm run build` creates the production standalone bundle and copies static assets. `npm start` serves it on loopback. The Docker image runs its standalone server on the container interface, while Compose publishes it on **host loopback only**.
+`npm run build` creates the production standalone bundle, compiles the worker and migration entrypoints to JavaScript, and copies only their traced dependencies, static assets and SQL migrations. `npm start` serves it on loopback. The Docker image runs its standalone server on the container interface, while Compose publishes it on **host loopback only**. Runtime images contain compiled `dist/worker.mjs` and `dist/migrate.mjs` and a traced `node_modules` tree; TypeScript sources, `tsx` and build tools stay in the build stage.
 
 Optional development fixtures are explicit and prohibited with `NODE_ENV=production`:
 
@@ -58,30 +58,27 @@ Requirements on the VPS: Docker Engine with Compose v2, Bash, Python 3, `flock`,
 
 1. Prepare `/etc/shipkudos/.env` (mode 600), deployment state, uploads and local backup directories. Make the uploads directory writable by container UID/GID `10001:10001`. The deploy account must be able to use Docker and those directories. Give it only the access appropriate to this application.
 2. Set `APP_URL=https://shipkudos.com`, production GitHub credentials and `IMAGE_REPO=ghcr.io/navarrillo/shipkudos.com`. Set a strong PostgreSQL password and the matching URL-encoded `DATABASE_URL` using service hostname `postgres`. The real `.env` stays outside Git and the Docker build context.
-3. Add the independent `shipclout.caddy` fragment to the existing Caddy imports, validate, then reload. It forwards to `127.0.0.1:8020`, sets HSTS/nosniff/referrer policy and removes `Server`. If `PORT` changes, change its upstream too. It does not change other domains or enable HSTS for their subdomains.
+3. Add the independent `shipkudos.caddy` fragment to the existing Caddy imports, validate, then reload. It forwards to `127.0.0.1:8020`, sets HSTS/nosniff/referrer policy and removes `Server`. If `PORT` changes, change its upstream too. It does not change other domains or enable HSTS for their subdomains.
 4. Configure the GitHub App and DNS. No production credentials belong in the repository.
-5. Configure the **production** GitHub Actions environment, restricted to `main`, without a required manual approval if unattended deployment is intended:
+5. Configure Helios to pull a successfully verified `main` release, use its matching scripts/Compose checkout, and invoke `bin/deploy <full-commit-sha>` locally on the VPS. Keep the deployment trigger and server access in Helios.
 
-| Kind | Name | Meaning |
-| --- | --- | --- |
-| Variable | `DEPLOY_HOST` | VPS hostname |
-| Variable | `DEPLOY_USER` | Dedicated SSH deploy account |
-| Variable | `DEPLOY_PATH` | Absolute release root, e.g. `/opt/shipkudos` |
-| Variable | `ENV_FILE` | External config path, e.g. `/etc/shipkudos/.env` |
-| Secret | `DEPLOY_SSH_KEY` | Deployment SSH private key |
-| Secret | `DEPLOY_KNOWN_HOSTS` | Previously verified SSH host-key entry; not a blind runtime key scan |
+### Production environment
 
-SSH transport credentials are the only deployment secrets in Actions. Application/OAuth/database secrets remain exclusively on the VPS. GHCR publication uses the ephemeral `GITHUB_TOKEN`.
+Helios and the local maintenance scripts read the single external `ENV_FILE` (normally `/etc/shipkudos/.env`). Set application, database and directory settings there using `.env.example` as the reference. Application secrets stay on the server.
+
+GitHub Actions verifies the application and publishes the public SHA-tagged image using its ephemeral `GITHUB_TOKEN`. No Actions production environment, VPS SSH keys, host keys or `DEPLOY_*` variables are required. Remove obsolete deployment secrets/settings from repository or environment settings if previously configured.
 
 ### GHCR publicity
 
-The repository is public, but newly created GHCR packages default to private. After first publication, set the package visibility to **public** in GitHub Packages. The workflow checks anonymous access and blocks deployment while it remains private; rerun that failed release after setting visibility. Later releases deploy without manual intervention. The package is linked to this repository through its OCI source label.
+The repository is public, but newly created GHCR packages default to private. After first publication, set the package visibility to **public** in GitHub Packages. The workflow checks anonymous access and fails release verification while it remains private; rerun that failed release after setting visibility. Later releases reuse the public package, and Helios handles their deployment. The package is linked to this repository through its OCI source label.
 
 Images are addressed by the full 40-character commit SHA. A `vX.Y.Z` Git tag attaches that version to the existing main-branch image. Deploy and rollback never depend on `latest`.
 
 ## Automatic release and recovery
 
-Every push to `main` runs verification, builds and publishes the SHA-tagged image, transfers the matching Compose/scripts release and calls `bin/deploy <sha>` over verified SSH. Production deliveries queue serially without cancelling running migrations.
+Every push to `main` runs verification, builds and publishes the SHA-tagged image. Main release workflows queue serially. A successful workflow confirms the published release is ready for Helios to pull; it does not imply that the VPS has already deployed it.
+
+Helios performs deployment from the checkout matching that exact SHA and runs `bin/deploy <sha>` locally. Configure any automatic pull/trigger policy in Helios. The existing maintenance lock serializes local deployments and recovery operations.
 
 All scripts locate the single external file using `ENV_FILE` and use the same bounded `flock` lock under `STATE_DIR`. Application secrets are not written into release metadata.
 
@@ -93,6 +90,8 @@ ENV_FILE=/etc/shipkudos/.env bin/rollback
 Deploy pulls the SHA tag, resolves its digest, runs **one migration entrypoint**, recreates **web and worker only** and waits for `/readyz` to report both expected revisions. A failed pull/migration leaves the existing app running. A failed new app restores the prior app image and returns failure even when recovery succeeds. First-release failure preserves PostgreSQL and volumes. Rollback never migrates, restores a database or recreates PostgreSQL. Application and pg-boss schema updates are disabled at runtime and happen only in the migration entrypoint.
 
 Schema and startup changes must remain compatible with the previous image. A major database upgrade or destructive migration is not part of routine release rollback.
+
+Compose starts the compiled entrypoints when present and retains a fallback to the initial image's TypeScript commands, preserving image-only rollback across this packaging change.
 
 ### Resource budget
 
