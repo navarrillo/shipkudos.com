@@ -27,7 +27,11 @@ export APP_IMAGE=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])
 export APP_SHA=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sha"])' "$backup/manifest.json")
 docker image inspect "$APP_IMAGE" >/dev/null 2>&1 || docker pull "$APP_IMAGE"
 dc stop web worker
-dc exec -T postgres pg_restore --clean --if-exists --no-owner --no-acl --exit-on-error -U "${POSTGRES_USER:-shipkudos}" -d "${POSTGRES_DB:-shipkudos}" < "$backup/database.dump"
+# Restore into an empty project database. --clean cannot reliably drop inherited
+# partition constraints from a live pg-boss schema in PostgreSQL 18.
+dc exec -T postgres dropdb --force --if-exists --maintenance-db=template1 -U "${POSTGRES_USER:-shipkudos}" -- "${POSTGRES_DB:-shipkudos}"
+dc exec -T postgres createdb --maintenance-db=template1 --template=template0 -U "${POSTGRES_USER:-shipkudos}" -- "${POSTGRES_DB:-shipkudos}"
+dc exec -T postgres pg_restore --no-owner --no-acl --exit-on-error -U "${POSTGRES_USER:-shipkudos}" -d "${POSTGRES_DB:-shipkudos}" < "$backup/database.dump"
 mkdir -p "$UPLOADS_DIR"
 tar -xzf "$backup/uploads.tar.gz" --no-same-owner --no-same-permissions -C "$UPLOADS_DIR"
 dc exec -T postgres psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-shipkudos}" -d "${POSTGRES_DB:-shipkudos}" -c 'DELETE FROM worker_health'

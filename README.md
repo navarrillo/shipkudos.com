@@ -113,7 +113,7 @@ ENV_FILE=/etc/shipkudos/.env bin/restore /var/backups/shipkudos/BACKUP_DIRECTORY
 
 `bin/backup` writes a compressed custom-format PostgreSQL dump, compressed immutable creatives and a checksum/version/image manifest to `BACKUP_DIR`, publishing the backup atomically only after success. It excludes the real `.env`, secrets and regenerable social-image cache. Creatives are immutable and not physically removed by campaign deletion in this MVP.
 
-Restore verifies checksums, archive paths and image metadata before stopping web/worker, restores the database and creatives, starts the compatible image and verifies readiness. Failure leaves the app stopped rather than serving an incomplete restoration. Keep the original external encryption keys available through the server's own configuration backup. Never use restore as an automatic release rollback. Schedule `bin/backup` and local retention using the server's existing backup system.
+Restore verifies checksums, archive paths and image metadata before stopping web/worker, replaces only the configured project database with an empty one, restores the dump and creatives, starts the compatible image and verifies readiness. An empty database avoids inherited-partition constraint conflicts during restoration of the queue. Failure leaves the app stopped rather than serving an incomplete restoration. Keep the original external encryption keys available through the server's own configuration backup. Never use restore as an automatic release rollback. Schedule `bin/backup` and local retention using the server's existing backup system.
 
 ## Checks
 
