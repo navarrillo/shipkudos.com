@@ -76,7 +76,7 @@ Images are addressed by the full 40-character commit SHA. A `vX.Y.Z` Git tag att
 
 ## Automatic release and recovery
 
-Every push to `main` runs verification, builds and publishes the SHA-tagged image. Main release workflows queue serially. A successful workflow confirms the published release is ready for Helios to pull; it does not imply that the VPS has already deployed it.
+Every push to `main` runs the PostgreSQL integration tests, builds the image with the GitHub Actions build cache, and publishes the SHA-tagged image. It does not repeat lint, typecheck, unit tests, a host production build, Playwright, or the backup/restore smoke test. Main release workflows queue serially. A successful workflow confirms the published release is ready for Helios to pull; it does not imply that the VPS has already deployed it.
 
 Helios performs deployment from the checkout matching that exact SHA and runs `bin/deploy <sha>` locally. Configure any automatic pull/trigger policy in Helios. The existing maintenance lock serializes local deployments and recovery operations.
 
@@ -124,9 +124,13 @@ node --env-file=/absolute/path/test.env node_modules/vitest/vitest.mjs run --con
 node --env-file=/absolute/path/test.env node_modules/@playwright/test/cli.js test
 ```
 
-Quick PR CI runs only lint, typecheck and Vitest, aiming for under one minute with warm dependencies (runner queue time is external). It does not start services or browsers. Playwright, PostgreSQL integration, Docker build and backup/restore smoke tests run on main and infrastructure-changing PRs. PRs never publish or deploy and do not receive production secrets. Tests use disposable databases and generated sessions, never production OAuth credentials. A live GitHub consent/private-contribution check and a live Grok Bot enrollment are required before advertising verified provider compatibility.
+Quick PR CI always runs lint, typecheck and Vitest, and cancels the previous run of that pull request when new commits arrive. With warm dependencies that job should finish in under a minute (runner queue time is external). It does not start services or browsers.
 
-Load testing is **manual only** via the `Manual load test` workflow (`workflow_dispatch`), against an isolated instance. It is never a push/PR/deployment step.
+PostgreSQL integration tests and a no-push image build run on a pull request only when it changes a Dockerfile, a Compose file, `bin/`, `migrations/`, or `.github/workflows`. Dispatching the Checks workflow runs that same job without publishing. PRs never publish or deploy and do not receive production secrets. Tests use disposable databases and generated sessions, never production OAuth credentials. A live GitHub consent/private-contribution check and a live Grok Bot enrollment are required before advertising verified provider compatibility.
+
+A push to `main` runs those integration tests, then builds the image with the GitHub Actions build cache, pushes `ghcr.io/navarrillo/shipkudos.com:<40-character sha>`, and checks that the tag can be read anonymously.
+
+Playwright and the backup/restore smoke test are manual only, via the `Manual browser and recovery` workflow (`workflow_dispatch`). Load testing stays manual via the `Manual load test` workflow, against an isolated instance. Neither runs on push or on a pull request.
 
 ## Sponsorship administration
 
