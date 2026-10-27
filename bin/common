@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+export ENV_FILE=${ENV_FILE:-/etc/shipkudos/.env}
+[[ -f "$ENV_FILE" ]] || { echo 'External ENV_FILE not found' >&2; exit 1; }
+# Parse dotenv values without executing shell code or printing credentials.
+python3 "$ROOT/bin/env.py" validate "$ENV_FILE"
+while IFS= read -r -d '' key && IFS= read -r -d '' value; do
+  export "$key=$value"
+done < <(python3 "$ROOT/bin/env.py" emit "$ENV_FILE")
+: "${STATE_DIR:?Set STATE_DIR}" "${UPLOADS_DIR:?Set UPLOADS_DIR}" "${IMAGE_REPO:?Set IMAGE_REPO}"
+mkdir -p "$STATE_DIR"
+exec 9>"$STATE_DIR/maintenance.lock"
+flock -w "${LOCK_TIMEOUT:-600}" 9 || { echo 'Maintenance lock timeout' >&2; exit 1; }
+STATE="$STATE_DIR/releases.json"
+state() { python3 "$ROOT/bin/state.py" "$1" "$STATE" "${@:2}"; }
+dc() { docker compose --project-name "${COMPOSE_PROJECT_NAME:-shipkudos}" --env-file "$ENV_FILE" -f "$ROOT/compose.yaml" "$@"; }
+check_ready() {
+  local expected=$1 deadline=$((SECONDS + ${DEPLOY_READY_TIMEOUT:-180})) response
+  while (( SECONDS < deadline )); do
+    if response=$(curl --fail --silent --show-error --max-time 3 "http://127.0.0.1:${PORT:-8020}/readyz" 2>/dev/null) && printf '%s' "$response" | python3 -c 'import json,sys; x=json.load(sys.stdin); sys.exit(0 if x.get("status")=="ok" and x.get("release")==sys.argv[1] and x.get("workerRelease")==sys.argv[1] else 1)' "$expected"; then return 0; fi
+    sleep 5
+  done
+  return 1
+}
+activate() { export APP_IMAGE=$1 APP_SHA=$2; dc up -d --no-deps --no-build --force-recreate web worker; }

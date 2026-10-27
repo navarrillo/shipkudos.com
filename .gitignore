@@ -1,0 +1,17 @@
+node_modules/
+.next/
+coverage/
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
+data/
+uploads/
+backups/
+state/
+*.log
+*.tsbuildinfo
+.DS_Store
+.playwright-cli/
+output/

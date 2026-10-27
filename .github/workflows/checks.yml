@@ -1,0 +1,44 @@
+name: Checks
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  quick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --prefer-offline --no-audit --no-fund
+      - run: npm run lint && npm run typecheck && npm test
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      infrastructure: ${{ steps.paths.outputs.infrastructure }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: paths
+        with:
+          filters: |
+            infrastructure:
+              - '**/Dockerfile*'
+              - '**/*compose*.yml'
+              - '**/*compose*.yaml'
+              - 'bin/**'
+              - '*.caddy'
+              - '.github/workflows/**'
+  heavy:
+    needs: [quick, changes]
+    if: needs.changes.outputs.infrastructure == 'true'
+    uses: ./.github/workflows/heavy.yml
+    with:
+      publish: false

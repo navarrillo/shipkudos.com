@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ $# == 0 ]] || { echo 'Usage: bin/rollback' >&2; exit 2; }
+source "$(dirname -- "$0")/common"
+image=$(state get previous image) || { echo 'No previous validated image' >&2; exit 1; }
+sha=$(state get previous sha)
+activate "$image" "$sha"
+check_ready "$sha"
+state rollback
+echo "Rolled back application images to $sha"

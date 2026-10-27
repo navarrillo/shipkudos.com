@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+source "$(dirname -- "$0")/common"
+: "${BACKUP_DIR:?Set BACKUP_DIR}"
+APP_IMAGE=$(state get current image)
+APP_SHA=$(state get current sha)
+export APP_IMAGE APP_SHA
+mkdir -p "$BACKUP_DIR"
+umask 077
+temp=$(mktemp -d "$BACKUP_DIR/.incomplete.XXXXXXXX")
+trap 'rm -rf -- "$temp"' EXIT
+dc exec -T postgres pg_dump -U "${POSTGRES_USER:-shipkudos}" -d "${POSTGRES_DB:-shipkudos}" -Fc -Z 6 > "$temp/database.dump"
+tar -C "$UPLOADS_DIR" -czf "$temp/uploads.tar.gz" .
+python3 - "$temp" "$APP_IMAGE" "$APP_SHA" <<'PY'
+import hashlib,json,sys,datetime
+from pathlib import Path
+def checksum(file):
+    h=hashlib.sha256()
+    with open(file,'rb') as stream:
+        for chunk in iter(lambda: stream.read(1024*1024),b''): h.update(chunk)
+    return h.hexdigest()
+p=Path(sys.argv[1]); files={name:checksum(p/name) for name in ['database.dump','uploads.tar.gz']}
+(p/'manifest.json').write_text(json.dumps({'version':1,'postgres':18,'createdAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'image':sys.argv[2],'sha':sys.argv[3],'files':files},indent=2))
+PY
+destination="$BACKUP_DIR/$(date -u +%Y%m%dT%H%M%SZ)-${APP_SHA:0:12}-$(basename "$temp" | cut -d. -f3)"
+mv "$temp" "$destination"
+trap - EXIT
+echo "$destination"
