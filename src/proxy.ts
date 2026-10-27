@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { profilePathRedirect } from "@/lib/seo";
+import { canonicalUrl, profilePathRedirect } from "@/lib/seo";
 
 export function proxy(request: NextRequest) {
   const target = profilePathRedirect(
@@ -7,7 +7,7 @@ export function proxy(request: NextRequest) {
     request.nextUrl.search,
   );
   if (!target) return NextResponse.next();
-  return NextResponse.redirect(new URL(target, request.url), 308);
+  return NextResponse.redirect(canonicalUrl(target), 308);
 }
 
 export const config = { matcher: "/u/:login" };

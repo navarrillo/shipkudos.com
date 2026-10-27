@@ -128,6 +128,16 @@ describe("profile login redirect", () => {
     );
   });
 
+  it("builds Location from the configured base, not the proxy request URL", () => {
+    const response = proxy(
+      new NextRequest("http://127.0.0.1:3000/u/NAVARRILLO?period=7"),
+    );
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(
+      "https://shipkudos.com/u/navarrillo?period=7",
+    );
+  });
+
   it("leaves an already lowercase profile URL alone", () => {
     const response = proxy(
       new NextRequest("https://shipkudos.com/u/navarrillo?period=7"),
@@ -207,14 +217,16 @@ describe("titles and descriptions", () => {
       "Top builders shipping with AI agents (30 days)",
     );
     expect(infoMetadata("methodology")?.title).toBe("How the ranking works");
+    expect(infoMetadata("privacy")?.title).toBe("Privacy policy");
+    expect(infoMetadata("terms")?.title).toBe("Terms of use");
     const ranked = {
       name: "Sergio Navarro",
       login: "navarrillo",
       tools: ["Codex", "Cursor", "Grok"],
     };
-    expect(profileTitle(ranked)).toBe(
-      "Sergio Navarro (@navarrillo) — ships with Codex, Cursor, Grok",
-    );
+    expect(
+      profileTitle({ ...ranked, tools: [...ranked.tools, "Claude Code"] }),
+    ).toBe("Sergio Navarro (@navarrillo) — ships with Codex + Cursor + Grok");
     expect(profileDescription(ranked, { score: 109, position: 1 })).toBe(
       "Sergio Navarro (@navarrillo): 109 public GitHub contributions in 7 days, #1 on ShipKudos. Ships with Codex, Cursor, Grok.",
     );

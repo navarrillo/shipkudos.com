@@ -124,7 +124,7 @@ describe("public profile metadata", () => {
     );
     expect(meta.alternates).toEqual({ canonical: `${base}/u/${login}` });
     expect(meta.title).toBe(
-      `Integration builder (@${login}) — ships with Codex, Cursor, Grok`,
+      `Integration builder (@${login}) — ships with Codex + Cursor + Grok`,
     );
     expect(meta.description).toContain("Codex, Cursor, Grok");
     expect(meta.description).toContain(`(@${login})`);

@@ -52,12 +52,12 @@ const infoPages: Record<string, { title: string; description: (app: string) => s
         `How the ${app} ranking works: public GitHub commits, pull requests, issues, and reviews over the last 7 and 30 days. Equal scores share a rank, and sponsors cannot buy positions.`,
     },
     privacy: {
-      title: "Your progress. Your choice.",
+      title: "Privacy policy",
       description: (app) =>
         `Privacy policy for ${app}: what we store after GitHub authorization, how published profiles and agent credentials work, and how to unpublish or delete your account.`,
     },
     terms: {
-      title: "A fair place to show up.",
+      title: "Terms of use",
       description: (app) =>
         `Terms for participating on ${app}: use a personal GitHub account, rankings reflect public activity only, and labelled sponsorships never change a builder's position.`,
     },
@@ -101,7 +101,7 @@ function toolList(tools: string[]) {
 }
 
 export function profileTitle(profile: PublicIdentity) {
-  const tools = toolList(profile.tools);
+  const tools = profile.tools.filter(Boolean).slice(0, 3).join(" + ");
   return `${profile.name} (@${profile.login}) — ships with ${tools || "AI agents"}`;
 }
 
