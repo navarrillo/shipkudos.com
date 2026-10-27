@@ -3,8 +3,15 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, SignIn } from "./actions";
-import { TOOLS } from "@/lib/domain";
+import {
+  awaitingRankingUpdate,
+  RANKING_PENDING_MESSAGE,
+  TOOLS,
+} from "@/lib/domain";
 import type { Profile } from "@/lib/data";
+type DashboardProfile = Profile & {
+  latest_ranking_at?: string | Date | null;
+};
 type Credential = {
   id: string;
   name: string;
@@ -15,7 +22,7 @@ type Credential = {
 };
 export function Dashboard({ configured }: { configured: boolean }) {
   const router = useRouter();
-  const [profile, setProfile] = useState<Profile | null>(null),
+  const [profile, setProfile] = useState<DashboardProfile | null>(null),
     [credentials, setCredentials] = useState<Credential[]>([]),
     [loading, setLoading] = useState(configured),
     [error, setError] = useState(""),
@@ -38,12 +45,24 @@ export function Dashboard({ configured }: { configured: boolean }) {
     const timer = setTimeout(() => void load(), 0);
     return () => clearTimeout(timer);
   }, [configured, load]);
+  const rankingPending = Boolean(
+    profile &&
+      awaitingRankingUpdate(
+        profile.published_at,
+        profile.last_sync_at,
+        profile.latest_ranking_at ?? null,
+      ),
+  );
   useEffect(() => {
-    if (profile?.sync_state !== "running" && profile?.sync_state !== "pending")
+    if (
+      profile?.sync_state !== "running" &&
+      profile?.sync_state !== "pending" &&
+      !rankingPending
+    )
       return;
     const t = setInterval(() => void load(), 5000);
     return () => clearInterval(t);
-  }, [profile?.sync_state, load]);
+  }, [profile?.sync_state, rankingPending, load]);
   async function action(fn: () => Promise<unknown>, message: string) {
     setError("");
     setNotice("");
@@ -148,6 +167,11 @@ export function Dashboard({ configured }: { configured: boolean }) {
             ? new Date(profile.last_sync_at).toUTCString()
             : "not yet"}
         </p>
+        {rankingPending && (
+          <p className="notice" role="status">
+            {RANKING_PENDING_MESSAGE}
+          </p>
+        )}
       </div>
       <form
         className="panel"

@@ -73,7 +73,8 @@ export default async function Leaderboard({
             {result.snapshot
               ? `Snapshot: ${new Date(result.snapshot.created_at).toUTCString()}.`
               : "The first snapshot will appear after a builder's initial sync."}{" "}
-            Updated every 15 minutes.{" "}
+            Updated within a minute of a successful sync, and at least every
+            15 minutes.{" "}
             <Link className="lime" href="/methodology">
               How ranking works ↗
             </Link>

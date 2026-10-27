@@ -3,7 +3,11 @@ import { PgBoss } from "pg-boss";
 import { requireProductionConfig } from "./lib/config";
 import { sql, getPool } from "./db";
 import { syncGitHub } from "./lib/github";
-import { rebuildRankings } from "./lib/rankings";
+import {
+  rebuildRankingsIfDue,
+  recordGitHubSync,
+  type RankState,
+} from "./lib/rankings";
 const env = requireProductionConfig(),
   instance = randomUUID();
 const boss = new PgBoss({
@@ -23,8 +27,8 @@ const [previousHealth] = await sql(
 );
 let stopping = false,
   progress: Date | null = previousHealth?.progress_at || null,
-  lastRank = 0,
   lastClean = 0;
+const ranks: RankState = { lastRank: 0, syncs: 0, covered: 0 };
 const stop = () => {
   stopping = true;
 };
@@ -36,7 +40,8 @@ await boss.work<{ profileId: string }>(
   async (jobs) => {
     await Promise.all(
       jobs.map(async (job) => {
-        await syncGitHub(job.data.profileId);
+        const completed = await syncGitHub(job.data.profileId);
+        recordGitHubSync(ranks, completed);
         progress = new Date();
       }),
     );
@@ -53,10 +58,7 @@ try {
         { profileId: row.id },
         { singletonKey: row.id, priority: row.last_sync_at ? 0 : 10 },
       );
-    if (Date.now() - lastRank > 900000) {
-      await rebuildRankings();
-      lastRank = Date.now();
-    }
+    await rebuildRankingsIfDue(ranks, Date.now());
     if (Date.now() - lastClean > 3600000) {
       await sql(
         "UPDATE agent_registrations SET state='expired' WHERE expires_at<now() AND state IN ('pending','approved')",

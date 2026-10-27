@@ -77,12 +77,12 @@ export async function githubToken(id: string) {
     return decryptToken(account.access_token);
   });
 }
-export async function syncGitHub(profileId: string) {
+export async function syncGitHub(profileId: string): Promise<boolean> {
   const [profile] = await sql(
     "SELECT * FROM profiles WHERE id=$1 AND published_at IS NOT NULL AND hidden_at IS NULL",
     [profileId],
   );
-  if (!profile) return;
+  if (!profile) return false;
   const run = crypto.randomUUID();
   await sql(
     "INSERT INTO sync_runs(id,profile_id,state) VALUES($1,$2,'running')",
@@ -157,14 +157,14 @@ export async function syncGitHub(profileId: string) {
     const { data: identity } = await octokit.rest.users.getAuthenticated();
     if (String(identity.id) !== profile.github_id || identity.type !== "User")
       throw new Error("github_identity_mismatch");
-    await transaction(async (client) => {
+    const completed = await transaction(async (client) => {
       const {
         rows: [stillPublished],
       } = await client.query(
         "SELECT id FROM profiles WHERE id=$1 AND published_at IS NOT NULL AND hidden_at IS NULL FOR UPDATE",
         [profileId],
       );
-      if (!stillPublished) return;
+      if (!stillPublished) return false;
       for (const row of rows)
         await client.query(
           "INSERT INTO daily_stats(profile_id,day,commits,prs,issues,reviews) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(profile_id,day) DO UPDATE SET commits=excluded.commits,prs=excluded.prs,issues=excluded.issues,reviews=excluded.reviews",
@@ -189,7 +189,9 @@ export async function syncGitHub(profileId: string) {
         "UPDATE sync_runs SET state='completed',finished_at=now() WHERE id=$1",
         [run],
       );
+      return true;
     });
+    return completed;
   } catch (error) {
     const e = error as {
       status?: number;
@@ -233,9 +235,10 @@ export async function syncGitHub(profileId: string) {
     );
     if (reconnect) {
       await revokeDelegates(profileId);
-      return;
+      return false;
     }
     if (!limited) throw new Error(code);
+    return false;
   }
 }
 export const closeDatabase = () => getPool().end();

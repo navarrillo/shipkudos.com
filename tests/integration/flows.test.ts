@@ -8,6 +8,13 @@ import {
   agentOwner,
 } from "../../src/lib/agents";
 import { rebuildRankings, leaderboard } from "../../src/lib/data";
+import {
+  RANK_REBUILD_AFTER_SYNC_MS,
+  RANK_REBUILD_INTERVAL_MS,
+  rebuildRankingsIfDue,
+  recordGitHubSync,
+  type RankState,
+} from "../../src/lib/rankings";
 import { getQueue } from "../../src/lib/queue";
 import {
   saveCampaign,
@@ -27,7 +34,7 @@ beforeAll(async () => {
     [id, id + "@example.invalid"],
   );
   await sql(
-    "INSERT INTO profiles(id,github_id,login,name,last_sync_at) VALUES($1,$2,$3,'Integration builder',now())",
+    "INSERT INTO profiles(id,github_id,login,name,published_at,last_sync_at,sync_state) VALUES($1,$2,$3,'Integration builder',now(),now(),'ready')",
     [id, githubId, login],
   );
 });
@@ -148,5 +155,80 @@ describe("ranking and campaign integrity", () => {
     await sql("DELETE FROM ad_daily WHERE campaign_id=$1", [campaign.id]);
     await sql("DELETE FROM campaigns WHERE id=$1", [campaign.id]);
     await sql("DELETE FROM advertisers WHERE id=$1", [advertiser]);
+  });
+  it("ranks a completed sync within a minute and still rebuilds every 15 minutes", async () => {
+    const userId = crypto.randomUUID(),
+      login = "sync-" + userId.slice(0, 8);
+    const ranked = () =>
+      sql<{ id: string; period: number; score: number }>(
+        "SELECT s.id::text,s.period,e.score FROM ranking_entries e JOIN ranking_snapshots s ON s.id=e.snapshot_id WHERE e.profile_id=$1 ORDER BY s.period,s.created_at",
+        [userId],
+      );
+    try {
+      await sql(
+        "INSERT INTO auth_user(id,name,email) VALUES($1,'Sync builder',$2)",
+        [userId, userId + "@example.invalid"],
+      );
+      await sql(
+        "INSERT INTO profiles(id,github_id,login,name,published_at,last_sync_at,sync_state) VALUES($1,$2,$3,'Sync builder',now(),now(),'ready')",
+        [userId, userId, login],
+      );
+      await sql(
+        "INSERT INTO daily_stats(profile_id,day,commits,prs,issues,reviews) VALUES($1,current_date,4,1,1,1)",
+        [userId],
+      );
+      const lastRank = 1_700_000_000_000;
+      const state: RankState = { lastRank, syncs: 0, covered: 0 };
+      recordGitHubSync(state, false);
+      expect(
+        await rebuildRankingsIfDue(state, lastRank + RANK_REBUILD_AFTER_SYNC_MS),
+      ).toBe(false);
+      expect(await ranked()).toEqual([]);
+      recordGitHubSync(state, true);
+      expect(
+        await rebuildRankingsIfDue(
+          state,
+          lastRank + RANK_REBUILD_AFTER_SYNC_MS - 1,
+        ),
+      ).toBe(false);
+      expect(await ranked()).toEqual([]);
+      expect(
+        await rebuildRankingsIfDue(state, lastRank + RANK_REBUILD_AFTER_SYNC_MS),
+      ).toBe(true);
+      const first = await ranked();
+      expect(first.map((row) => [row.period, row.score])).toEqual([
+        [7, 7],
+        [30, 7],
+      ]);
+      expect(state.covered).toBe(state.syncs);
+      expect(state.lastRank).toBe(lastRank + RANK_REBUILD_AFTER_SYNC_MS);
+      const pinned = await leaderboard(7, "", undefined, first[0].id);
+      expect(pinned.snapshot?.id).toBe(first[0].id);
+      expect(
+        await rebuildRankingsIfDue(
+          state,
+          state.lastRank + RANK_REBUILD_INTERVAL_MS,
+        ),
+      ).toBe(false);
+      expect((await ranked()).map((row) => row.id)).toEqual(
+        first.map((row) => row.id),
+      );
+      expect(
+        await rebuildRankingsIfDue(
+          state,
+          state.lastRank + RANK_REBUILD_INTERVAL_MS + 1,
+        ),
+      ).toBe(true);
+      const later = await ranked();
+      expect(later.map((row) => row.id)).not.toEqual(first.map((row) => row.id));
+      expect(later).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ period: 7, score: 7 }),
+          expect.objectContaining({ period: 30, score: 7 }),
+        ]),
+      );
+    } finally {
+      await sql("DELETE FROM auth_user WHERE id=$1", [userId]);
+    }
   });
 });
