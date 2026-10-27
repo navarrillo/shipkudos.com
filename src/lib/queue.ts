@@ -1,6 +1,6 @@
 import { PgBoss } from "pg-boss";
 import { sql, transaction } from "../db";
-import { HttpError } from "./http";
+import { HttpError } from "./errors";
 let promise: Promise<PgBoss> | undefined;
 export function getQueue() {
   promise ??= (async () => {

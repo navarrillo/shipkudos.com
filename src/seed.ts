@@ -1,5 +1,5 @@
 import { sql, getPool } from "./db";
-import { rebuildRankings } from "./lib/data";
+import { rebuildRankings } from "./lib/rankings";
 if (process.env.NODE_ENV === "production" || process.env.DEMO_MODE !== "true")
   throw new Error(
     "Fixtures require NODE_ENV=test/development and DEMO_MODE=true on an isolated database",

@@ -3,7 +3,7 @@ import { PgBoss } from "pg-boss";
 import { requireProductionConfig } from "./lib/config";
 import { sql, getPool } from "./db";
 import { syncGitHub } from "./lib/github";
-import { rebuildRankings } from "./lib/data";
+import { rebuildRankings } from "./lib/rankings";
 const env = requireProductionConfig(),
   instance = randomUUID();
 const boss = new PgBoss({

@@ -88,7 +88,11 @@ services:
       retries: 3
   worker:
     image: ${APP_IMAGE:?Set APP_IMAGE}
-    command: [node, --import, tsx, src/worker.ts]
+    # Keep image-only rollback compatible with the initial TS-based image.
+    command:
+      - sh
+      - -ec
+      - if [ -f dist/worker.mjs ]; then exec node dist/worker.mjs; else exec node --import tsx src/worker.ts; fi
     environment:
       <<: *environment
       DB_POOL_SIZE: "5"
@@ -105,7 +109,10 @@ services:
   migrate:
     profiles: [tools]
     image: ${APP_IMAGE:?Set APP_IMAGE}
-    command: [node, --import, tsx, src/migrate.ts]
+    command:
+      - sh
+      - -ec
+      - if [ -f dist/migrate.mjs ]; then exec node dist/migrate.mjs; else exec node --import tsx src/migrate.ts; fi
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?Set TOKEN_ENCRYPTION_KEY}

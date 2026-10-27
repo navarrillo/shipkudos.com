@@ -53,6 +53,21 @@ jobs:
           build-args: APP_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Check compiled runtime contents
+        run: |
+          docker image ls shipkudos:test
+          docker image inspect shipkudos:test --format 'Runtime image size: {{.Size}} bytes'
+          docker run --rm --entrypoint node shipkudos:test --input-type=module -e '
+            import assert from "node:assert/strict";
+            import { existsSync } from "node:fs";
+            import { createRequire } from "node:module";
+            const require = createRequire(import.meta.url);
+            assert(existsSync("dist/worker.mjs") && existsSync("dist/migrate.mjs"));
+            assert(!existsSync("src"));
+            for (const name of ["tsx", "typescript", "esbuild"]) {
+              assert.throws(() => require.resolve(name), { code: "MODULE_NOT_FOUND" });
+            }
+          '
       - name: Exercise deployment and local recovery in isolated Compose
         run: bash tests/ops/smoke.sh
       - name: Login to GHCR

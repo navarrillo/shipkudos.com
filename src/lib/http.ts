@@ -4,16 +4,9 @@ import { getAuth } from "./auth";
 import { config } from "./config";
 import { hashSecret } from "./crypto";
 import { sql } from "../db";
+import { HttpError } from "./errors";
+export { HttpError } from "./errors";
 
-export class HttpError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    public retryAfter?: number,
-  ) {
-    super(code);
-  }
-}
 export const json = (value: unknown, status = 200) =>
   NextResponse.json(value, {
     status,
