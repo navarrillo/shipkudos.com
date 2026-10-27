@@ -6,7 +6,7 @@ const pool = getPool(),
   client = await pool.connect();
 try {
   await client.query(
-    "SELECT pg_advisory_lock(hashtext('shipclout-migrations'))",
+    "SELECT pg_advisory_lock(hashtext('shipkudos-migrations'))",
   );
   await client.query(
     "CREATE TABLE IF NOT EXISTS app_migrations(name text PRIMARY KEY,checksum text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now())",
@@ -61,7 +61,7 @@ try {
   await boss.stop();
 } finally {
   await client.query(
-    "SELECT pg_advisory_unlock(hashtext('shipclout-migrations'))",
+    "SELECT pg_advisory_unlock(hashtext('shipkudos-migrations'))",
   );
   client.release();
   await pool.end();
