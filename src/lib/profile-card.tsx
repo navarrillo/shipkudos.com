@@ -28,6 +28,48 @@ const mono = {
   letterSpacing: 1.5,
   textTransform: "uppercase" as const,
 };
+const CONTENT_WIDTH = 1200 - 128;
+const HEAT_WIDTH = 30 * 18 + 29 * 5;
+const FOOTER_GAP = 32;
+export const FOOTER_MAX_WIDTH = CONTENT_WIDTH - HEAT_WIDTH - FOOTER_GAP;
+
+export function cardName(name: string) {
+  const chars = Array.from(name);
+  if (chars.length <= 26) return name;
+  return `${chars.slice(0, 25).join("")}…`;
+}
+
+export function cardLogin(login: string) {
+  const chars = Array.from(login);
+  const fontSize = chars.length > 22 ? 16 : 24;
+  const maxChars = fontSize === 16 ? 39 : 22;
+  const text =
+    chars.length <= maxChars
+      ? login
+      : `${chars.slice(0, maxChars - 1).join("")}…`;
+  return { text, fontSize };
+}
+
+function monoWidth(text: string, fontSize: number) {
+  return text.length * fontSize * 0.75;
+}
+
+export function cardFooter(host: string, login: string) {
+  const prefix = `${host}/u/`;
+  for (const fontSize of [20, 16, 14, 13]) {
+    const text = `${prefix}${login}`;
+    if (monoWidth(text, fontSize) <= FOOTER_MAX_WIDTH) return { text, fontSize };
+  }
+  const fontSize = 13;
+  const maxChars = Math.max(
+    prefix.length + 1,
+    Math.floor(FOOTER_MAX_WIDTH / (fontSize * 0.75)),
+  );
+  const room = maxChars - prefix.length;
+  const clipped =
+    room <= 1 ? "…" : `${Array.from(login).slice(0, room - 1).join("")}…`;
+  return { text: `${prefix}${clipped}`, fontSize };
+}
 
 export function last30Scores(
   days: { day: string; score: number }[],
@@ -131,8 +173,10 @@ export function ProfileCard({
       ? `TOP ${Math.max(1, Math.ceil((position / total) * 100))}% · ${period}-DAY BOARD`
       : `${period}-DAY BOARD`
     : "JUST JOINED · NOT RANKED YET";
-  const visible = name.length > 48 ? `${name.slice(0, 47)}…` : name;
-  const nameSize = visible.length > 24 ? 36 : visible.length > 16 ? 44 : 54;
+  const visible = cardName(name);
+  const nameSize = visible.length > 18 ? 36 : visible.length > 14 ? 44 : 54;
+  const handle = cardLogin(login);
+  const footer = cardFooter(host, login);
   const chips = tools.map((tool) => tool.trim()).filter(Boolean).slice(0, 3);
   return (
     <div
@@ -268,30 +312,48 @@ export function ProfileCard({
               display: "flex",
               flexDirection: "column",
               gap: 6,
-              width: 500,
+              width: 480,
+              overflow: "hidden",
             }}
           >
             <span
               style={{
+                width: 460,
                 fontSize: nameSize,
                 fontWeight: 600,
-                letterSpacing: -2,
+                letterSpacing: -1.5,
                 lineHeight: 1.05,
               }}
             >
               {visible}
             </span>
-            <span style={{ fontFamily: "Geist Mono", fontSize: 24, color: C.muted }}>
-              @{login}
+            <span
+              style={{
+                fontFamily: "Geist Mono",
+                fontSize: handle.fontSize,
+                color: C.muted,
+                whiteSpace: "nowrap",
+              }}
+            >
+              @{handle.text}
             </span>
             {chips.length ? (
-              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  marginTop: 10,
+                  whiteSpace: "nowrap",
+                }}
+              >
                 <span
                   style={{
                     ...mono,
                     fontSize: 15,
                     color: C.muted,
                     alignSelf: "center",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
                   }}
                 >
                   SHIPS WITH
@@ -369,12 +431,32 @@ export function ProfileCard({
           alignItems: "flex-end",
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            flexShrink: 0,
+          }}
+        >
           <span style={{ ...mono, fontSize: 13, color: C.muted }}>LAST 30 DAYS</span>
           {heat(scores, period)}
         </div>
-        <span style={{ fontFamily: "Geist Mono", fontSize: 20, color: C.text }}>
-          {host}/u/{login}
+        <span
+          style={{
+            display: "flex",
+            width: FOOTER_MAX_WIDTH,
+            fontFamily: "Geist Mono",
+            fontSize: footer.fontSize,
+            color: C.text,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            flexShrink: 0,
+            justifyContent: "flex-end",
+            marginLeft: FOOTER_GAP,
+          }}
+        >
+          {footer.text}
         </span>
       </div>
     </div>

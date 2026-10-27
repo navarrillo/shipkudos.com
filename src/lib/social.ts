@@ -41,9 +41,19 @@ function pageCanonical(metadata: Metadata, fallbackPath = "/") {
 }
 
 /** Open Graph and Twitter tags only. Titles, descriptions, and canonicals stay in seo.ts. */
+export function twitterCreator(handle: string | null | undefined) {
+  const cleaned = handle?.trim().replace(/^@+/, "") ?? "";
+  if (!cleaned || /[^A-Za-z0-9_]/.test(cleaned)) return undefined;
+  return `@${cleaned}`;
+}
+
 export function socialPreview(
   metadata: Metadata,
-  options?: { image?: { url: string; alt: string }; path?: string },
+  options?: {
+    image?: { url: string; alt: string };
+    path?: string;
+    creator?: string;
+  },
 ): Pick<Metadata, "openGraph" | "twitter"> {
   const description =
     typeof metadata.description === "string" ? metadata.description : undefined;
@@ -66,13 +76,18 @@ export function socialPreview(
       title,
       description,
       images: [image.url],
+      ...(options?.creator ? { creator: options.creator } : {}),
     },
   };
 }
 
 export function withSocial(
   metadata: Metadata,
-  options?: { image?: { url: string; alt: string }; path?: string },
+  options?: {
+    image?: { url: string; alt: string };
+    path?: string;
+    creator?: string;
+  },
 ): Metadata {
   return { ...metadata, ...socialPreview(metadata, options) };
 }
@@ -96,6 +111,7 @@ export function profileSocialMetadata(
       url: links.imageUrl,
       alt: `${name} (@${data.profile.login})`,
     },
+    creator: twitterCreator(data.profile.x_handle),
   });
 }
 
@@ -118,7 +134,7 @@ export async function socialCardResponse(
     return new Response(bytes, {
       headers: {
         "Content-Type": "image/png",
-        "Cache-Control": "public, max-age=300",
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
       },
     });
   const fallback = await defaultSocialCardBytes();

@@ -136,7 +136,18 @@ describe("profile page preview tags", () => {
     expect(tags.get("og:image:height")).toBe("630");
     expect(tags.get("og:image:alt")).toContain("@ada");
     expect(tags.get("twitter:card")).toBe("summary_large_image");
+    expect(tags.get("twitter:creator")).toBeUndefined();
     expect([...tags.values()].join(" ")).not.toContain("shipkudos.com");
+  });
+  it("sets twitter:creator from the profile x handle", () => {
+    useApp();
+    const tags = tagsOf(
+      profileSocialMetadata({
+        ...profile,
+        profile: { ...profile.profile, x_handle: "@ada_builds" },
+      }),
+    );
+    expect(tags.get("twitter:creator")).toBe("@ada_builds");
   });
   it("uses the default card when the profile page has no published builder", async () => {
     useApp();
@@ -173,7 +184,9 @@ describe("default card fallback", () => {
     expect((await sharp(png).metadata()).width).toBe(1200);
     const rendered = new Uint8Array([9, 8, 7]).buffer;
     const ok = await socialCardResponse(rendered);
-    expect(ok.headers.get("cache-control")).toBe("public, max-age=300");
+    expect(ok.headers.get("cache-control")).toBe(
+      "public, max-age=86400, stale-while-revalidate=604800",
+    );
     expect(Buffer.from(await ok.arrayBuffer())).toEqual(Buffer.from(rendered));
   });
   it("turns a WebP avatar into a PNG data URI that the card renderer can draw", async () => {

@@ -27,6 +27,7 @@ export type ShareInput = {
     login: string;
     name: string;
     tools: string[];
+    x_handle?: string | null;
     last_sync_at: Date | string | null;
   };
   days: ShareDay[];

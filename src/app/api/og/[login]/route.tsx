@@ -5,28 +5,8 @@ import { socialImages } from "@/lib/social-image";
 import { socialCardResponse } from "@/lib/social";
 import { cardFonts, last30Scores, ProfileCard } from "@/lib/profile-card";
 import { shareStats } from "@/lib/share";
-import { avatarBufferToDataUri } from "@/lib/avatar-image";
+import { fetchAvatarPng } from "@/lib/avatar-image";
 export const runtime = "nodejs";
-
-async function avatarPng(urlValue: string | null) {
-  try {
-    const url = new URL(urlValue || "");
-    if (url.protocol !== "https:" || url.hostname !== "avatars.githubusercontent.com")
-      return null;
-    url.searchParams.set("s", "128");
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(2000),
-      redirect: "error",
-    });
-    if (!response.ok) return null;
-    if (Number(response.headers.get("content-length") || 0) > 1048576) return null;
-    const input = await response.arrayBuffer();
-    if (input.byteLength > 1048576) return null;
-    return await avatarBufferToDataUri(input);
-  } catch {
-    return null;
-  }
-}
 
 export async function GET(
   request: Request,
@@ -49,7 +29,7 @@ export async function GET(
   });
   return socialCardResponse(
     socialImages.get(key, async () => {
-      const avatar = await avatarPng(data.profile.avatar);
+      const avatar = await fetchAvatarPng(data.profile.avatar);
       const host = new URL(config().APP_URL).host;
       return new ImageResponse(
         <ProfileCard
