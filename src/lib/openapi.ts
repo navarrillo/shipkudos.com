@@ -96,6 +96,20 @@ export function agentOpenApi(appUrl: string, appName: string) {
           additionalProperties: false,
           required: ["error"],
           properties: {
+            issues: {
+              type: "array",
+              description:
+                "Present for invalid_request. Dot-separated field paths; an empty path refers to the whole body. Malformed JSON uses an empty path and message Malformed JSON.",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["path", "message"],
+                properties: {
+                  path: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
             error: {
               type: "string",
               description:
@@ -137,6 +151,12 @@ export function agentOpenApi(appUrl: string, appName: string) {
           additionalProperties: false,
           required: ["registrationId", "state", "expiresAt", "interval"],
           properties: {
+            authorizationUrl: {
+              type: "string",
+              format: "uri",
+              description:
+                "Included only while state is pending. Hand this link to the owner.",
+            },
             registrationId: { type: "string", format: "uuid" },
             state: {
               type: "string",
@@ -304,7 +324,7 @@ export function agentOpenApi(appUrl: string, appName: string) {
               `Registration created. Pending for ${pendingMinutes} minutes.`,
             ),
             "400": failure(
-              "invalid_request when the JSON is malformed or fails validation. missing_body when the body is absent.",
+              "invalid_request with issues (path and message) when the JSON is malformed or fails validation. missing_body when the body is absent.",
             ),
             "429": failure(
               `rate_limited. More than ${REGISTRATION_IP_LIMIT} creations in ${REGISTRATION_IP_WINDOW_SECONDS} seconds for one IPv4 address or one IPv6 /64, or more than ${REGISTRATION_GLOBAL_LIMIT} in ${REGISTRATION_GLOBAL_WINDOW_SECONDS} seconds for all clients.`,
@@ -338,13 +358,13 @@ export function agentOpenApi(appUrl: string, appName: string) {
           {
             "200": json(
               "RegistrationStatus",
-              "Current registration state. expiresAt is the pending deadline, or the exchange deadline after approval.",
+              "Current registration state. Polling an already-exchanged registration returns 200 completed; it does not return 409. authorizationUrl is included only while pending. expiresAt is the pending deadline, or the exchange deadline after approval.",
             ),
             "400": failure(
               "invalid_request. The registration id is not a UUID.",
             ),
             "401": failure(
-              "invalid_credential when Authorization is missing or malformed, or invalid_registration_credential when the token does not match this registration.",
+              "invalid_credential when Authorization is missing or malformed, or the token does not match this registration.",
             ),
             "429": failure(
               `poll_too_fast. Polled again before ${REGISTRATION_POLL_INTERVAL_SECONDS} seconds.`,
@@ -367,7 +387,7 @@ export function agentOpenApi(appUrl: string, appName: string) {
               "invalid_request. The registration id is not a UUID.",
             ),
             "401": failure(
-              "invalid_credential when Authorization is missing or malformed, or invalid_registration_credential when the token does not match this registration.",
+              "invalid_credential when Authorization is missing or malformed, or the token does not match this registration.",
             ),
             "409": failure(
               "registration_not_exchangeable when the registration is not approved, has no owner, the exchange window has passed, or it was already exchanged. profile_unavailable when the profile is missing or hidden.",

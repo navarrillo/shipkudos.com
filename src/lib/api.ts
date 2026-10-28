@@ -69,13 +69,12 @@ export const dispatch = route(async (request: Request) => {
     return getAuth().handler(request);
   }
   if (endpoint === "leaderboard" && method === "GET") {
-    const period = z
-        .enum(["7", "30"])
-        .parse(url.searchParams.get("period") || "7"),
-      q = z
-        .string()
-        .max(80)
-        .parse(url.searchParams.get("q") || "");
+    const { period, q } = z
+      .object({ period: z.enum(["7", "30"]), q: z.string().max(80) })
+      .parse({
+        period: url.searchParams.get("period") || "7",
+        q: url.searchParams.get("q") || "",
+      });
     return json(
       toPublicLeaderboard(
         await cachedLeaderboard(
@@ -87,10 +86,9 @@ export const dispatch = route(async (request: Request) => {
     );
   }
   if (endpoint.startsWith("profiles/") && method === "GET") {
-    const login = z
-      .string()
-      .regex(/^[a-z0-9-]{1,39}$/i)
-      .parse(endpoint.slice(9));
+    const { login } = z
+      .object({ login: z.string().regex(/^[a-z0-9-]{1,39}$/i) })
+      .parse({ login: endpoint.slice(9) });
     const profile = await cachedPublicProfile(login);
     if (!profile) throw new HttpError(404, "profile_not_found");
     return json(toPublicProfileView(profile));
@@ -142,8 +140,8 @@ export const dispatch = route(async (request: Request) => {
     /^v1\/agent-registrations\/([^/]+)(\/exchange)?$/,
   );
   if (registration) {
-    const id = uuid.parse(registration[1]),
-      token = bearer(request);
+    const { id } = z.object({ id: uuid }).parse({ id: registration[1] });
+    const token = bearer(request);
     if (method === "GET" && !registration[2])
       return json(await registrationStatus(id, token));
     if (method === "POST" && registration[2])
@@ -179,7 +177,10 @@ export const dispatch = route(async (request: Request) => {
       const p = await ownProfile(id);
       const requested = url.searchParams.get("period");
       const period = requested
-        ? (Number(z.enum(["7", "30"]).parse(requested)) as 7 | 30)
+        ? (Number(
+            z.object({ period: z.enum(["7", "30"]) }).parse({ period: requested })
+              .period,
+          ) as 7 | 30)
         : undefined;
       const published = await cachedPublicProfile(p.login);
       return json(
