@@ -12,6 +12,7 @@ import {
 } from "@/lib/seo";
 import { profileSocialMetadata, withSocial } from "@/lib/social";
 import { Ad } from "@/components/ad";
+import { ShareProfile } from "@/components/share-profile";
 export const dynamic = "force-dynamic";
 function redirectMixedCase(
   login: string,
@@ -88,14 +89,11 @@ export default async function Profile({
             <GitFork size={16} />
             GitHub <ArrowUpRight size={14} />
           </a>
-          <a
-            className="button button-primary"
-            href={links.intentUrl}
-            target="_blank"
-            rel="noopener"
-          >
-            Share profile ↗
-          </a>
+          <ShareProfile
+            text={links.text}
+            profileUrl={links.profileUrl}
+            intentUrl={links.intentUrl}
+          />
         </div>
       </section>
       <div className="stats">
