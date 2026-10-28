@@ -1,8 +1,3 @@
-export type SharePayload = {
-  text: string;
-  url: string;
-};
-
 export type ShareProfileTarget = {
   text: string;
   profileUrl: string;
@@ -14,21 +9,35 @@ export type ShareClickEvent = {
 };
 
 export type ShareClickEnvironment = {
-  share?: (data: SharePayload) => Promise<void> | void;
-  coarsePointer: boolean;
-  open: (url: string) => void;
+  /** Phone (coarse pointer or iOS/Android user agent). Desktop leaves the link. */
+  mobile: boolean;
+  /** Same-tab navigation. Used for the app deep link and the web fallback. */
+  assign: (url: string) => void;
+  /**
+   * Fired when the page is hidden (`visibilitychange` → hidden, or `pagehide`),
+   * which means the X app took over. Return an unsubscribe function.
+   */
+  onPageHide: (listener: () => void) => () => void;
+  /** Return a cancel function. The fallback delay is {@link APP_OPEN_FALLBACK_MS}. */
+  schedule: (ms: number, run: () => void) => () => void;
 };
 
-const COARSE_POINTER = "(pointer: coarse)";
+/** How long to wait for the X app before opening the web composer. */
+export const APP_OPEN_FALLBACK_MS = 1500;
 
-export function isAbortError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    (error as { name: unknown }).name === "AbortError"
-  );
-}
+const COARSE_POINTER = "(pointer: coarse)";
+const MOBILE_UA = /iPhone|iPad|iPod|Android/i;
+
+type HideDocument = {
+  readonly visibilityState: string;
+  addEventListener(type: string, listener: () => void): void;
+  removeEventListener(type: string, listener: () => void): void;
+};
+
+type HideWindow = {
+  addEventListener(type: string, listener: () => void): void;
+  removeEventListener(type: string, listener: () => void): void;
+};
 
 /** Primary pointer is touch. Desktop mice stay on the intent link. */
 export function isCoarsePointer(
@@ -42,35 +51,87 @@ export function isCoarsePointer(
   }
 }
 
-function canNativeShare(
-  env: ShareClickEnvironment,
-): env is ShareClickEnvironment & {
-  share: (data: SharePayload) => Promise<void> | void;
-} {
-  return typeof env.share === "function" && env.coarsePointer;
+/** iOS and Android, including a touch device whose user agent is desktop-like. */
+export function isMobileClient(
+  matchMedia?: (query: string) => { matches: boolean },
+  userAgent?: string,
+) {
+  if (isCoarsePointer(matchMedia)) return true;
+  return typeof userAgent === "string" && MOBILE_UA.test(userAgent);
 }
 
 /**
- * Touch devices with the Web Share API open the OS sheet (`text` and `url`
- * stay separate). Cancel is a no-op. Any other failure, or a device without
- * native share, leaves the intent URL to open in a new tab.
+ * The X app keeps `message` and drops a separate url field, so the profile
+ * URL has to live in the text. Append it once, with a blank line before it.
+ */
+export function shareMessage(text: string, profileUrl: string) {
+  if (profileUrl && text.includes(profileUrl)) return text;
+  if (!text) return profileUrl;
+  return `${text}\n\n${profileUrl}`;
+}
+
+export function xAppDeepLink(message: string) {
+  return `twitter://post?message=${encodeURIComponent(message)}`;
+}
+
+/**
+ * Web composer for the same message. The profile URL is inside `text`;
+ * a separate `url` param would duplicate it or be dropped by the app.
+ */
+export function webIntentUrl(intentUrl: string, message: string) {
+  const hashAt = intentUrl.indexOf("#");
+  const withoutHash = hashAt === -1 ? intentUrl : intentUrl.slice(0, hashAt);
+  const queryAt = withoutHash.indexOf("?");
+  const base = queryAt === -1 ? withoutHash : withoutHash.slice(0, queryAt);
+  return `${base}?text=${encodeURIComponent(message)}`;
+}
+
+/** Cancel the app-open fallback once the page is actually leaving. */
+export function watchPageHide(
+  doc: HideDocument,
+  win: HideWindow,
+  onHide: () => void,
+) {
+  const onVisibility = () => {
+    if (doc.visibilityState === "hidden") onHide();
+  };
+  const onPageHide = () => onHide();
+  doc.addEventListener("visibilitychange", onVisibility);
+  win.addEventListener("pagehide", onPageHide);
+  return () => {
+    doc.removeEventListener("visibilitychange", onVisibility);
+    win.removeEventListener("pagehide", onPageHide);
+  };
+}
+
+/**
+ * Phones try the X app composer in this tab. If the page is still visible
+ * after {@link APP_OPEN_FALLBACK_MS}, the same tab opens the web intent.
+ * Desktop clicks do not call `preventDefault`, so the link opens in a new tab.
  */
 export function onShareProfileClick(
   event: ShareClickEvent,
   target: ShareProfileTarget,
   env: ShareClickEnvironment,
-): Promise<void> | void {
-  if (!canNativeShare(env)) return;
+): void {
+  if (!env.mobile) return;
   event.preventDefault();
-  let pending: Promise<void> | void;
-  try {
-    pending = env.share({ text: target.text, url: target.profileUrl });
-  } catch (error) {
-    if (!isAbortError(error)) env.open(target.intentUrl);
-    return;
-  }
-  return Promise.resolve(pending).catch((error: unknown) => {
-    if (isAbortError(error)) return;
-    env.open(target.intentUrl);
+  const message = shareMessage(target.text, target.profileUrl);
+  let cancelTimer = () => {};
+  let stopWatching = () => {};
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    cancelTimer();
+    stopWatching();
+  };
+  stopWatching = env.onPageHide(finish);
+  cancelTimer = env.schedule(APP_OPEN_FALLBACK_MS, () => {
+    if (settled) return;
+    settled = true;
+    stopWatching();
+    env.assign(webIntentUrl(target.intentUrl, message));
   });
+  env.assign(xAppDeepLink(message));
 }
