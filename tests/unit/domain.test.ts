@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   activity,
+  PUBLIC_REPOSITORY_LIMIT,
   publicCounters,
   stockholmToISO,
   daysAgo,
@@ -41,6 +42,17 @@ describe("public activity", () => {
       ),
     ).toEqual({ count: 0, capped: false }));
 });
+function repo(
+  isPrivate: boolean,
+  visibility: string,
+  totalCount: number,
+  nameWithOwner?: string,
+) {
+  return {
+    repository: { isPrivate, visibility, nameWithOwner },
+    contributions: { totalCount },
+  };
+}
 describe("upstream and campaign boundaries", () => {
   it("never adds restricted counts to the public activity score", () => {
     const publicData = publicCounters({
@@ -49,8 +61,110 @@ describe("upstream and campaign boundaries", () => {
       totalIssueContributions: 1,
       totalPullRequestReviewContributions: 4,
       restrictedContributionsCount: 100000,
+      contributionCalendar: { totalContributions: 100010 },
     });
     expect(activity(publicData)).toBe(10);
+    expect(publicData).toEqual({ commits: 3, prs: 2, issues: 1, reviews: 4 });
+  });
+  it("drops private and internal repositories when the aggregate includes them", () => {
+    const counted = publicCounters({
+      totalCommitContributions: 4 + 88881 + 77771,
+      totalPullRequestContributions: 3 + 50,
+      totalIssueContributions: 2,
+      totalPullRequestReviewContributions: 1 + 9,
+      restrictedContributionsCount: 99991,
+      commitContributionsByRepository: [
+        repo(false, "PUBLIC", 4),
+        repo(true, "PRIVATE", 88881, "secret/hidden-repo"),
+        repo(true, "INTERNAL", 77771),
+      ],
+      pullRequestContributionsByRepository: [
+        repo(false, "PUBLIC", 3),
+        repo(true, "PRIVATE", 50),
+      ],
+      issueContributionsByRepository: [repo(false, "PUBLIC", 2)],
+      pullRequestReviewContributionsByRepository: [
+        repo(false, "PUBLIC", 1),
+        repo(false, "INTERNAL", 9),
+      ],
+    });
+    expect(counted).toEqual({ commits: 4, prs: 3, issues: 2, reviews: 1 });
+    expect(activity(counted)).toBe(10);
+    expect(JSON.stringify(counted)).not.toContain("hidden-repo");
+  });
+  it("keeps the public aggregate when no private repository is listed", () => {
+    expect(
+      publicCounters({
+        totalCommitContributions: 10,
+        totalPullRequestContributions: 0,
+        totalIssueContributions: 0,
+        totalPullRequestReviewContributions: 0,
+        commitContributionsByRepository: [repo(false, "PUBLIC", 4)],
+      }),
+    ).toMatchObject({ commits: 10 });
+  });
+  it("keeps the public sum when a 100-repository list cannot be reconciled", () => {
+    const repos = Array.from({ length: PUBLIC_REPOSITORY_LIMIT }, (_, index) =>
+      repo(
+        index === 0,
+        index === 0 ? "PRIVATE" : "PUBLIC",
+        1,
+        "secret/hidden-repo",
+      ),
+    );
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((line) => {
+      logs.push(String(line));
+    });
+    try {
+      expect(
+        publicCounters({
+          totalCommitContributions: 1000,
+          totalPullRequestContributions: 0,
+          totalIssueContributions: 0,
+          totalPullRequestReviewContributions: 0,
+          commitContributionsByRepository: repos,
+        }),
+      ).toMatchObject({ commits: 99 });
+      expect(logs).toEqual([
+        JSON.stringify({
+          event: "github_truncated_contributions",
+          category: "commits",
+        }),
+      ]);
+      expect(logs.join("\n")).not.toContain("hidden-repo");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it("accepts exactly 100 repositories when public plus private equals the total", () => {
+    const repos = Array.from({ length: PUBLIC_REPOSITORY_LIMIT }, (_, index) =>
+      repo(
+        index < 40,
+        index < 40 ? "PRIVATE" : "PUBLIC",
+        2,
+        `owner/repo-${index}`,
+      ),
+    );
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((line) => {
+      logs.push(String(line));
+    });
+    try {
+      expect(
+        publicCounters({
+          totalCommitContributions: 200,
+          totalPullRequestContributions: 0,
+          totalIssueContributions: 0,
+          totalPullRequestReviewContributions: 0,
+          commitContributionsByRepository: repos,
+        }),
+      ).toMatchObject({ commits: 120 });
+      expect(logs.join("\n")).not.toContain("github_truncated_contributions");
+      expect(logs.join("\n")).not.toContain("owner/repo-");
+    } finally {
+      spy.mockRestore();
+    }
   });
   it("rejects partial counter responses instead of replacing good data with zeros", () => {
     expect(() => publicCounters({ totalCommitContributions: 3 })).toThrow(

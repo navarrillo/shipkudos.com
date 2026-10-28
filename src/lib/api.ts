@@ -22,14 +22,18 @@ import { sql, getPool, transaction } from "../db";
 import {
   cachedLeaderboard,
   cachedPublicProfile,
+  latestRankingAt,
   ownProfile,
   shareLinks,
+  toPublicLeaderboard,
+  toPublicProfileView,
 } from "./data";
 import {
   agentOwner,
   approveRegistration,
   createRegistration,
   exchangeRegistration,
+  registrationRateLimits,
   registrationSchema,
   registrationStatus,
 } from "./agents";
@@ -73,10 +77,12 @@ export const dispatch = route(async (request: Request) => {
         .max(80)
         .parse(url.searchParams.get("q") || "");
     return json(
-      await cachedLeaderboard(
-        Number(period),
-        q,
-        url.searchParams.get("cursor") || undefined,
+      toPublicLeaderboard(
+        await cachedLeaderboard(
+          Number(period),
+          q,
+          url.searchParams.get("cursor") || undefined,
+        ),
       ),
     );
   }
@@ -87,7 +93,7 @@ export const dispatch = route(async (request: Request) => {
       .parse(endpoint.slice(9));
     const profile = await cachedPublicProfile(login);
     if (!profile) throw new HttpError(404, "profile_not_found");
-    return json(profile);
+    return json(toPublicProfileView(profile));
   }
   if (endpoint === "github/webhook" && method === "POST") {
     const secret = config().GITHUB_WEBHOOK_SECRET;
@@ -116,7 +122,7 @@ export const dispatch = route(async (request: Request) => {
       for (const profile of profiles) {
         await revokeDelegates(profile.id);
         await sql(
-          "UPDATE auth_account SET access_token=NULL,refresh_token=NULL WHERE user_id=$1 AND provider_id='github'",
+          "UPDATE auth_account SET access_token=NULL,refresh_token=NULL,id_token=NULL WHERE user_id=$1 AND provider_id='github'",
           [profile.id],
         );
       }
@@ -125,7 +131,8 @@ export const dispatch = route(async (request: Request) => {
     return json({ ok: true });
   }
   if (endpoint === "v1/agent-registrations" && method === "POST") {
-    await rateLimit(`registration:${clientKey(request)}`, 10, 3600);
+    for (const rule of registrationRateLimits(clientKey(request)))
+      await rateLimit(rule.key, rule.limit, rule.seconds);
     return json(
       await createRegistration(registrationSchema.parse(await body(request))),
       201,
@@ -152,7 +159,8 @@ export const dispatch = route(async (request: Request) => {
     await rateLimit(`agent:${id}`, 120, 60);
     if (endpoint === "v1/me" && method === "GET") {
       const profile = await ownProfile(id);
-      return json(await cachedPublicProfile(profile.login));
+      const view = await cachedPublicProfile(profile.login);
+      return json(view ? toPublicProfileView(view) : null);
     }
     if (endpoint === "v1/me/sync" && method === "GET") {
       const p = await ownProfile(id);
@@ -169,12 +177,15 @@ export const dispatch = route(async (request: Request) => {
     }
     if (endpoint === "v1/me/share" && method === "GET") {
       const p = await ownProfile(id);
+      const requested = url.searchParams.get("period");
+      const period = requested
+        ? (Number(z.enum(["7", "30"]).parse(requested)) as 7 | 30)
+        : undefined;
+      const published = await cachedPublicProfile(p.login);
       return json(
         shareLinks(
-          p.login,
-          Number(
-            z.enum(["7", "30"]).parse(url.searchParams.get("period") || "7"),
-          ),
+          published ?? { profile: p, days: [], ranks: [] },
+          period,
         ),
       );
     }
@@ -183,8 +194,14 @@ export const dispatch = route(async (request: Request) => {
   if (endpoint.startsWith("me")) {
     const user = await sessionUser(request);
     if (method !== "GET") sameOrigin(request);
-    if (endpoint === "me" && method === "GET")
-      return json(await ownProfile(user.id));
+    if (endpoint === "me" && method === "GET") {
+      const profile = await ownProfile(user.id);
+      if (!profile) return json(profile);
+      return json({
+        ...profile,
+        latest_ranking_at: await latestRankingAt(),
+      });
+    }
     if (endpoint === "me" && method === "PATCH") {
       const input = z
         .object({

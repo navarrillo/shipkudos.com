@@ -675,6 +675,16 @@ textarea {
   color: #c8be85;
   font-size: 12px;
 }
+.callout {
+  border: 1px solid #6b5a2a;
+  background: #1c180f;
+  color: #f0e2a8;
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 16px 0;
+}
 .setup {
   border: 1px dashed #425237;
   padding: 15px;

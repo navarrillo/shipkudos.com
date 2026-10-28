@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { config } from "@/lib/config";
-export const metadata = { title: "For agents" };
+import { agentsMetadata } from "@/lib/seo";
+import { withSocial } from "@/lib/social";
+export function generateMetadata(): Metadata {
+  return withSocial(agentsMetadata());
+}
 export default function Agents() {
   const base = config().APP_URL;
   return (

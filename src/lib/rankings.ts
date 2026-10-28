@@ -1,5 +1,52 @@
 import { transaction } from "../db";
 
+/** Periodic rebuild. Unchanged from the original worker interval. */
+export const RANK_REBUILD_INTERVAL_MS = 900_000;
+/** Minimum gap after the previous rebuild before a sync can trigger another. */
+export const RANK_REBUILD_AFTER_SYNC_MS = 60_000;
+
+export type RankState = {
+  /** Epoch ms of the last completed rebuild. 0 means this process has not rebuilt yet. */
+  lastRank: number;
+  /** Successful github-sync jobs observed by this process. */
+  syncs: number;
+  /** `syncs` value included in the last rebuild. A gap means rankings are dirty. */
+  covered: number;
+};
+
+/** Mark rankings dirty only when syncGitHub stored a ready profile. */
+export function recordGitHubSync(state: RankState, completed: boolean) {
+  if (completed) state.syncs += 1;
+}
+
+export function rankingsDue(state: RankState, now: number) {
+  const elapsed = now - state.lastRank;
+  const dirty = state.syncs !== state.covered;
+  return (
+    elapsed > RANK_REBUILD_INTERVAL_MS ||
+    (dirty && elapsed >= RANK_REBUILD_AFTER_SYNC_MS)
+  );
+}
+
+/**
+ * Rebuild when the 15-minute interval has elapsed, or when a successful sync
+ * is waiting and the last rebuild was at least 60 seconds ago.
+ * `covered` stays behind `syncs` if another sync finishes during the rebuild,
+ * so that sync is not cleared until a later pass.
+ */
+export async function rebuildRankingsIfDue(
+  state: RankState,
+  now: number,
+  rebuild: () => Promise<void> = rebuildRankings,
+) {
+  if (!rankingsDue(state, now)) return false;
+  const seen = state.syncs;
+  await rebuild();
+  if (state.covered < seen) state.covered = seen;
+  state.lastRank = now;
+  return true;
+}
+
 export async function rebuildRankings() {
   await transaction(async (client) => {
     await client.query(

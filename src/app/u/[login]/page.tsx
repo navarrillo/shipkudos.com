@@ -1,39 +1,60 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Image from "next/image";
 import { ShieldCheck, GitFork, ArrowUpRight } from "lucide-react";
 import { cachedPublicProfile, shareLinks } from "@/lib/data";
 import { streak } from "@/lib/domain";
+import { explicitPeriod } from "@/lib/share";
+import {
+  profileCanonical,
+  profileRedirectTarget,
+  searchString,
+} from "@/lib/seo";
+import { profileSocialMetadata, withSocial } from "@/lib/social";
 import { Ad } from "@/components/ad";
 export const dynamic = "force-dynamic";
+function redirectMixedCase(
+  login: string,
+  searchParams: Record<string, string | string[] | undefined>,
+) {
+  const target = profileRedirectTarget(login, searchString(searchParams));
+  if (target) permanentRedirect(target);
+}
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ login: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<Metadata> {
   const { login } = await params;
+  const query = await searchParams;
+  redirectMixedCase(login, query);
   const data = await cachedPublicProfile(login);
-  if (!data) return { title: "Builder not found" };
-  const links = shareLinks(data.profile.login);
-  return {
-    title: `${data.profile.name}'s public activity`,
-    openGraph: { images: [links.imageUrl] },
-    twitter: { card: "summary_large_image", images: [links.imageUrl] },
-  };
+  if (!data)
+    return withSocial({
+      title: "Builder not found",
+      alternates: { canonical: profileCanonical(login) },
+    });
+  return profileSocialMetadata(data, explicitPeriod(query.period));
 }
 export default async function Profile({
   params,
+  searchParams,
 }: {
   params: Promise<{ login: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { login } = await params,
-    data = await cachedPublicProfile(login);
+  const { login } = await params;
+  const query = await searchParams;
+  redirectMixedCase(login, query);
+  const data = await cachedPublicProfile(login);
   if (!data) notFound();
   const { profile, days, ranks } = data,
     weekly = ranks.find((r) => r.period === 7),
     monthly = ranks.find((r) => r.period === 30),
     current = streak(days),
-    links = shareLinks(profile.login);
+    links = shareLinks(data, explicitPeriod(query.period));
   return (
     <>
       <section className="page-head">
@@ -69,7 +90,7 @@ export default async function Profile({
           </a>
           <a
             className="button button-primary"
-            href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(links.text)}`}
+            href={links.intentUrl}
             target="_blank"
             rel="noopener"
           >

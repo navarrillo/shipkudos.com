@@ -1,5 +1,8 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { config } from "@/lib/config";
+import { infoMetadata } from "@/lib/seo";
+import { withSocial } from "@/lib/social";
 export function generateStaticParams() {
   return ["methodology", "privacy", "terms"].map((info) => ({ info }));
 }
@@ -18,7 +21,7 @@ const content: Record<string, { title: string; sections: [string, string][] }> =
         ],
         [
           "Freshness",
-          "Active builders synchronize every six hours; others daily. We rebuild the leaderboard every 15 minutes. GitHub delays, quotas and errors may postpone an update. We retain the last valid data and show its date. Streaks use the available 60-day history.",
+          "Active builders synchronize every six hours; others daily. A successful sync is included in the next ranking snapshot within a minute, and the board is rebuilt at least every 15 minutes. GitHub delays, quotas and errors may postpone an update. We retain the last valid data and show its date. Streaks use the available 60-day history.",
         ],
         [
           "Identity and agents",
@@ -47,7 +50,7 @@ const content: Record<string, { title: string; sections: [string, string][] }> =
         ],
         [
           "Retention and deletion",
-          "Detailed activity is retained for 60 days and daily rank history for 30 days. Pending registrations expire after 15 minutes; expired entries are removed within 24 hours. Deletion removes account data from the active database. Server-managed backups may retain older data until their retention period ends.",
+          "Detailed activity is retained for 60 days and daily rank history for 30 days. Pending registrations expire after 60 minutes. Approval then allows about 10 minutes to finish registration. Expired entries are removed within 24 hours. Deletion removes account data from the active database. Server-managed backups may retain older data until their retention period ends.",
         ],
         [
           "Contact",
@@ -81,9 +84,9 @@ export async function generateMetadata({
   params,
 }: {
   params: Promise<{ info: string }>;
-}) {
+}): Promise<Metadata> {
   const { info } = await params;
-  return { title: content[info]?.title || "Not found" };
+  return withSocial(infoMetadata(info) ?? { title: "Not found" });
 }
 export default async function Info({
   params,

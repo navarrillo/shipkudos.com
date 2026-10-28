@@ -1,8 +1,8 @@
 import { unstable_cache } from "next/cache";
 import { sql } from "../db";
-import { config } from "./config";
 import { HttpError } from "./http";
 import { signPayload, verifyPayload } from "./crypto";
+import { shareLinks as buildShareLinks } from "./share";
 
 export type Profile = {
   id: string;
@@ -34,10 +34,17 @@ export type RankedProfile = Profile & {
 export async function ownProfile(id: string) {
   return (await sql<Profile>("SELECT * FROM profiles WHERE id=$1", [id]))[0];
 }
+export async function latestRankingAt() {
+  const [row] = await sql<{ created_at: Date | null }>(
+    "SELECT max(created_at) AS created_at FROM ranking_snapshots",
+  );
+  return row?.created_at ?? null;
+}
 export async function leaderboard(
   period: number,
   search = "",
   cursor?: string,
+  snapshotId?: string,
 ) {
   if (!process.env.DATABASE_URL)
     return {
@@ -64,7 +71,7 @@ export async function leaderboard(
     throw new HttpError(409, "ranking_updated_restart_pagination");
   const [snapshot] = await sql<{ id: string; created_at: Date }>(
     "SELECT id,created_at FROM ranking_snapshots WHERE period=$2 AND ($1::uuid IS NULL OR id=$1::uuid) ORDER BY created_at DESC LIMIT 1",
-    [decoded?.snapshot || null, period],
+    [decoded?.snapshot || snapshotId || null, period],
   );
   if (!snapshot) {
     if (cursor) throw new HttpError(409, "ranking_updated_restart_pagination");
@@ -99,7 +106,8 @@ export async function leaderboard(
   };
 }
 const cachedDefaultLeaderboard = unstable_cache(
-  (period: number) => leaderboard(period),
+  (period: number, snapshotId: string) =>
+    leaderboard(period, "", undefined, snapshotId),
   ["leaderboard"],
   { revalidate: 60, tags: ["public-data"] },
 );
@@ -109,9 +117,17 @@ export async function cachedLeaderboard(
   cursor?: string,
 ) {
   // Arbitrary searches/cursors must not create an unbounded filesystem cache.
-  return search || cursor
-    ? leaderboard(period, search, cursor)
-    : cachedDefaultLeaderboard(period);
+  if (!process.env.DATABASE_URL || search || cursor)
+    return leaderboard(period, search, cursor);
+  const [latest] = await sql<{ id: string }>(
+    "SELECT id FROM ranking_snapshots WHERE period=$1 ORDER BY created_at DESC LIMIT 1",
+    [period],
+  );
+  // The worker is a separate process, so revalidateTag there cannot expire this
+  // cache. The snapshot id is part of the key: the next request misses and
+  // shows a snapshot as soon as it exists.
+  if (!latest) return leaderboard(period);
+  return cachedDefaultLeaderboard(period, latest.id);
 }
 export async function publicProfile(login: string) {
   if (!process.env.DATABASE_URL) return null;
@@ -136,8 +152,12 @@ export async function publicProfile(login: string) {
     position: number;
     score: number;
     active_days: number;
+    commits: number;
+    prs: number;
+    total: number;
+    snapshot_id: string;
   }>(
-    `SELECT s.period,e.position,e.score,e.active_days FROM ranking_entries e JOIN ranking_snapshots s ON s.id=e.snapshot_id WHERE e.profile_id=$1 AND s.id IN (SELECT DISTINCT ON(period) id FROM ranking_snapshots ORDER BY period,created_at DESC) AND $2::timestamptz>now()-interval '48 hours'`,
+    `SELECT s.period,s.id AS snapshot_id,e.position,e.score,e.active_days,e.commits,e.prs,(SELECT count(*)::int FROM ranking_entries WHERE snapshot_id=s.id) AS total FROM ranking_entries e JOIN ranking_snapshots s ON s.id=e.snapshot_id WHERE e.profile_id=$1 AND s.id IN (SELECT DISTINCT ON(period) id FROM ranking_snapshots ORDER BY period,created_at DESC) AND $2::timestamptz>now()-interval '48 hours'`,
     [profile.id, profile.last_sync_at],
   );
   return { profile, days, ranks };
@@ -157,11 +177,129 @@ export async function cachedPublicProfile(login: string) {
   return visible ? existingProfileCache(login.toLowerCase()) : null;
 }
 export { rebuildRankings } from "./rankings";
-export function shareLinks(login: string, period = 7) {
-  const url = `${config().APP_URL}/u/${encodeURIComponent(login)}`;
+export const PUBLIC_PROFILE_FIELDS = [
+  "login",
+  "name",
+  "avatar",
+  "bio",
+  "tools",
+  "x_handle",
+  "published_at",
+  "last_sync_at",
+] as const;
+export const PUBLIC_LEADERBOARD_FIELDS = [
+  "login",
+  "name",
+  "avatar",
+  "tools",
+  "last_sync_at",
+  "position",
+  "score",
+  "commits",
+  "prs",
+  "issues",
+  "reviews",
+  "active_days",
+] as const;
+export type PublicProfileIdentity = Pick<
+  Profile,
+  (typeof PUBLIC_PROFILE_FIELDS)[number]
+>;
+export type PublicLeaderboardEntry = Pick<
+  RankedProfile,
+  (typeof PUBLIC_LEADERBOARD_FIELDS)[number]
+>;
+export function toPublicProfileView(data: {
+  profile: Profile;
+  days: {
+    day: string;
+    commits: number;
+    prs: number;
+    issues: number;
+    reviews: number;
+    score: number;
+  }[];
+  ranks: {
+    period: number;
+    position: number;
+    score: number;
+    active_days: number;
+    commits?: number;
+    prs?: number;
+    total?: number;
+    snapshot_id?: string;
+  }[];
+}) {
+  const profile: PublicProfileIdentity = {
+    login: data.profile.login,
+    name: data.profile.name,
+    avatar: data.profile.avatar,
+    bio: data.profile.bio,
+    tools: data.profile.tools,
+    x_handle: data.profile.x_handle,
+    published_at: data.profile.published_at,
+    last_sync_at: data.profile.last_sync_at,
+  };
   return {
-    profileUrl: url,
-    imageUrl: `${config().APP_URL}/api/og/${encodeURIComponent(login)}?period=${period}`,
-    text: `See what I've been building. My last ${period} days on ${config().APP_NAME}: ${url}`,
+    profile,
+    days: data.days.map((day) => ({
+      day: day.day,
+      commits: day.commits,
+      prs: day.prs,
+      issues: day.issues,
+      reviews: day.reviews,
+      score: day.score,
+    })),
+    ranks: data.ranks.map((rank) => ({
+      period: rank.period,
+      position: rank.position,
+      score: rank.score,
+      active_days: rank.active_days,
+    })),
   };
 }
+export function toPublicLeaderboard(result: {
+  entries: RankedProfile[];
+  snapshot: { id: string; created_at: Date } | null;
+  nextCursor: string | null;
+}) {
+  return {
+    entries: result.entries.map(
+      (entry): PublicLeaderboardEntry => ({
+        login: entry.login,
+        name: entry.name,
+        avatar: entry.avatar,
+        tools: entry.tools,
+        last_sync_at: entry.last_sync_at,
+        position: entry.position,
+        score: entry.score,
+        commits: entry.commits,
+        prs: entry.prs,
+        issues: entry.issues,
+        reviews: entry.reviews,
+        active_days: entry.active_days,
+      }),
+    ),
+    snapshot: result.snapshot
+      ? { id: result.snapshot.id, created_at: result.snapshot.created_at }
+      : null,
+    nextCursor: result.nextCursor,
+  };
+}
+export function shareLinks(
+  data: Parameters<typeof buildShareLinks>[0],
+  period?: 7 | 30,
+) {
+  return buildShareLinks(data, period);
+}
+/** Stable sample for the agent guide and OpenAPI, matching GET /api/v1/me/share. */
+export const exampleShareInput = {
+  profile: {
+    login: "octocat",
+    name: "The Octocat",
+    tools: [] as string[],
+    last_sync_at: "2026-10-27T21:22:00.000Z",
+  },
+  days: [],
+  ranks: [],
+} satisfies Parameters<typeof buildShareLinks>[0];

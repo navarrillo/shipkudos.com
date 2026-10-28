@@ -1,3 +1,4 @@
+import { isIPv6 } from "node:net";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { getAuth } from "./auth";
@@ -93,13 +94,68 @@ export function bearer(request: Request) {
     throw new HttpError(401, "invalid_credential");
   return value.slice(7);
 }
+function ipv6Groups(address: string) {
+  let text = address;
+  if (text.includes(".")) {
+    const lastColon = text.lastIndexOf(":");
+    const numbers = text
+      .slice(lastColon + 1)
+      .split(".")
+      .map((part) => Number(part));
+    if (
+      numbers.length !== 4 ||
+      numbers.some((n) => !Number.isInteger(n) || n < 0 || n > 255)
+    )
+      return null;
+    const hi = ((numbers[0] << 8) | numbers[1]).toString(16);
+    const lo = ((numbers[2] << 8) | numbers[3]).toString(16);
+    text = `${text.slice(0, lastColon)}:${hi}:${lo}`;
+  }
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const parse = (part: string) =>
+    part
+      ? part.split(":").map((group) => Number.parseInt(group, 16))
+      : [];
+  const head = parse(halves[0]);
+  const tail = halves.length === 2 ? parse(halves[1]) : [];
+  const groups = [...head, ...tail];
+  if (groups.some((n) => !Number.isInteger(n) || n < 0 || n > 0xffff))
+    return null;
+  if (halves.length === 1) return head.length === 8 ? head : null;
+  const missing = 8 - head.length - tail.length;
+  if (missing < 1) return null;
+  return [...head, ...Array<number>(missing).fill(0), ...tail];
+}
+/** IPv4 stays as written. IPv6 shares one bucket per /64. IPv4-mapped addresses use the embedded IPv4 address. */
+export function rateLimitAddress(address: string) {
+  const trimmed = address.trim();
+  const candidate = trimmed.replace(/^\[|\]$/g, "").split("%")[0];
+  if (!isIPv6(candidate)) return trimmed;
+  const groups = ipv6Groups(candidate);
+  if (!groups) return trimmed;
+  const mapped = groups.slice(0, 5).every((part) => part === 0) && groups[5] === 0xffff;
+  if (mapped) {
+    const hi = groups[6],
+      lo = groups[7];
+    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  }
+  return groups
+    .slice(0, 4)
+    .map((part) => part.toString(16).padStart(4, "0"))
+    .join(":");
+}
 export function clientKey(request: Request) {
-  return hashSecret(
-    (request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() ||
-      "local") +
-      ":" +
-      (config().BETTER_AUTH_SECRET || "development"),
+  const address = rateLimitAddress(
+    request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() ||
+      "local",
   );
+  return hashSecret(
+    `${address}:${config().BETTER_AUTH_SECRET || "development"}`,
+  );
+}
+export function retryAfterSeconds(windowSeconds: number, now = Date.now()) {
+  return windowSeconds - (Math.floor(now / 1000) % windowSeconds);
 }
 export async function rateLimit(key: string, limit: number, seconds: number) {
   const bucket = Math.floor(Date.now() / (seconds * 1000));
@@ -108,9 +164,5 @@ export async function rateLimit(key: string, limit: number, seconds: number) {
     [`${key}:${bucket}`, seconds],
   );
   if (row.hits > limit)
-    throw new HttpError(
-      429,
-      "rate_limited",
-      seconds - (Math.floor(Date.now() / 1000) % seconds),
-    );
+    throw new HttpError(429, "rate_limited", retryAfterSeconds(seconds));
 }

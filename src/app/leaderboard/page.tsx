@@ -1,9 +1,18 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { cachedLeaderboard } from "@/lib/data";
+import { leaderboardMetadata } from "@/lib/seo";
+import { withSocial } from "@/lib/social";
 import { Ranking } from "@/components/ranking";
 import { Ad } from "@/components/ad";
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Leaderboard" };
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}): Promise<Metadata> {
+  return withSocial(leaderboardMetadata(await searchParams));
+}
 export default async function Leaderboard({
   searchParams,
 }: {
@@ -73,7 +82,8 @@ export default async function Leaderboard({
             {result.snapshot
               ? `Snapshot: ${new Date(result.snapshot.created_at).toUTCString()}.`
               : "The first snapshot will appear after a builder's initial sync."}{" "}
-            Updated every 15 minutes.{" "}
+            Updated within a minute of a successful sync, and at least every
+            15 minutes.{" "}
             <Link className="lime" href="/methodology">
               How ranking works ↗
             </Link>
