@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, writeFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { storedShareLinks } from "./profile-cards";
 import { getAuth } from "./auth";
 import { config } from "./config";
 import {
@@ -24,7 +25,6 @@ import {
   cachedPublicProfile,
   latestRankingAt,
   ownProfile,
-  shareLinks,
   toPublicLeaderboard,
   toPublicProfileView,
 } from "./data";
@@ -184,7 +184,7 @@ export const dispatch = route(async (request: Request) => {
         : undefined;
       const published = await cachedPublicProfile(p.login);
       return json(
-        shareLinks(
+        await storedShareLinks(
           published ?? { profile: p, days: [], ranks: [] },
           period,
         ),

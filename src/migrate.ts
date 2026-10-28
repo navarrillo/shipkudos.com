@@ -58,6 +58,14 @@ try {
     expireInSeconds: 300,
     retentionSeconds: 7 * 86400,
   });
+  await boss.createQueue("profile-cards", {
+    policy: "exclusive",
+    retryLimit: 4,
+    retryDelay: 30,
+    retryBackoff: true,
+    expireInSeconds: 300,
+    retentionSeconds: 7 * 86400,
+  });
   await boss.stop();
 } finally {
   await client.query(

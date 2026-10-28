@@ -21,6 +21,7 @@ export function allowedAvatarUrl(value: string | null): URL | null {
   if (url.protocol !== "https:" || url.hostname !== "avatars.githubusercontent.com")
     return null;
   url.searchParams.set("s", "128");
+  url.searchParams.set("f", "png");
   return url;
 }
 
@@ -28,7 +29,7 @@ export async function fetchAvatarPng(
   value: string | null,
   doFetch: (
     input: URL,
-    init: { signal: AbortSignal; redirect: "error" },
+    init: { signal: AbortSignal; redirect: "error"; headers: { Accept: string } },
   ) => Promise<Pick<Response, "ok" | "headers" | "arrayBuffer">> = fetch,
 ): Promise<string | null> {
   const url = allowedAvatarUrl(value);
@@ -37,6 +38,7 @@ export async function fetchAvatarPng(
     const response = await doFetch(url, {
       signal: AbortSignal.timeout(2000),
       redirect: "error",
+      headers: { Accept: "image/png" },
     });
     if (!response.ok) return null;
     if (Number(response.headers.get("content-length") || 0) > MAX_AVATAR_BYTES)
@@ -47,4 +49,20 @@ export async function fetchAvatarPng(
   } catch {
     return null;
   }
+}
+
+// Share the decoded PNG across the two periods and subsequent jobs in this process.
+// Bound the cache so a large backfill cannot grow worker memory without limit.
+const avatars = new Map<string, Promise<string | null>>();
+export function cachedAvatarPng(value: string | null) {
+  if (!value) return Promise.resolve(null);
+  const hit = avatars.get(value);
+  if (hit) return hit;
+  if (avatars.size >= 512) avatars.delete(avatars.keys().next().value!);
+  const pending = fetchAvatarPng(value).then((png) => {
+    if (!png) avatars.delete(value);
+    return png;
+  });
+  avatars.set(value, pending);
+  return pending;
 }

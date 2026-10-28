@@ -95,6 +95,7 @@ export function withSocial(
 export function profileSocialMetadata(
   data: ShareInput,
   period?: 7 | 30,
+  imageUrl?: string,
 ): Metadata {
   const metadata = publicProfileMetadata(
     {
@@ -108,7 +109,7 @@ export function profileSocialMetadata(
   const name = data.profile.name || data.profile.login;
   return withSocial(metadata, {
     image: {
-      url: links.imageUrl,
+      url: imageUrl ?? links.imageUrl,
       alt: `${name} (@${data.profile.login})`,
     },
     creator: twitterCreator(data.profile.x_handle),

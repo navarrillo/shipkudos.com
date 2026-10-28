@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import {
   allowedAvatarUrl,
+  cachedAvatarPng,
   fetchAvatarPng,
   MAX_AVATAR_BYTES,
 } from "../../src/lib/avatar-image";
@@ -31,12 +32,17 @@ describe("avatar fetch", () => {
   it("rejects other hosts and plain http", async () => {
     const fetchImpl = vi.fn();
     expect(allowedAvatarUrl("https://example.com/a.png")).toBeNull();
-    expect(allowedAvatarUrl("http://avatars.githubusercontent.com/u/1")).toBeNull();
+    expect(
+      allowedAvatarUrl("http://avatars.githubusercontent.com/u/1"),
+    ).toBeNull();
     expect(
       await fetchAvatarPng("https://evil.example/a.png", fetchImpl),
     ).toBeNull();
     expect(
-      await fetchAvatarPng("http://avatars.githubusercontent.com/u/1", fetchImpl),
+      await fetchAvatarPng(
+        "http://avatars.githubusercontent.com/u/1",
+        fetchImpl,
+      ),
     ).toBeNull();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
@@ -46,7 +52,10 @@ describe("avatar fetch", () => {
       throw new TypeError("redirect");
     });
     expect(
-      await fetchAvatarPng("https://avatars.githubusercontent.com/u/1", fetchImpl),
+      await fetchAvatarPng(
+        "https://avatars.githubusercontent.com/u/1",
+        fetchImpl,
+      ),
     ).toBeNull();
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
@@ -56,13 +65,43 @@ describe("avatar fetch", () => {
     });
     const fetchImpl = vi.fn(async () => tooBig.response);
     expect(
-      await fetchAvatarPng("https://avatars.githubusercontent.com/u/1", fetchImpl),
+      await fetchAvatarPng(
+        "https://avatars.githubusercontent.com/u/1",
+        fetchImpl,
+      ),
     ).toBeNull();
     expect(tooBig.read()).toBe(false);
     const unmarked = response(Buffer.alloc(MAX_AVATAR_BYTES + 1));
     const fetchBody = vi.fn(async () => unmarked.response);
     expect(
-      await fetchAvatarPng("https://avatars.githubusercontent.com/u/9", fetchBody),
+      await fetchAvatarPng(
+        "https://avatars.githubusercontent.com/u/9",
+        fetchBody,
+      ),
     ).toBeNull();
   });
+});
+
+it("fetches a PNG once per avatar URL across periods and concurrent worker jobs", async () => {
+  const fetchImpl = vi.fn(
+    async (url: URL, init: { headers: { Accept: string } }) => {
+      expect(url.searchParams.get("f")).toBe("png");
+      expect(init.headers.Accept).toBe("image/png");
+      return new Response(Uint8Array.from(png));
+    },
+  );
+  vi.stubGlobal("fetch", fetchImpl);
+  try {
+    const url = "https://avatars.githubusercontent.com/u/987654321";
+    const [week, month] = await Promise.all([
+      cachedAvatarPng(url),
+      cachedAvatarPng(url),
+    ]);
+    expect(week).toBe(month);
+    expect(week).toMatch(/^data:image\/png;base64,/);
+    expect(await cachedAvatarPng(url)).toBe(week);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

@@ -3,6 +3,8 @@ import { z } from "zod";
 import { sql, transaction } from "../db";
 import { bearer, HttpError } from "./http";
 import { randomSecret, hashSecret } from "./crypto";
+import { enqueueProfileCards } from "./profile-cards";
+import { getQueue } from "./queue";
 import { config } from "./config";
 import { SCOPES, type Scope } from "./domain";
 
@@ -170,6 +172,7 @@ export async function approveRegistration(
         [ownerId],
       );
   });
+  if (accepted) await enqueueProfileCards(await getQueue(), ownerId);
   // Publication is part of the approval transaction; the worker's durable due-list
   // picks up first-time publications without giving additional agents extra syncs.
 }

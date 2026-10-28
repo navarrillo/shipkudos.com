@@ -1,5 +1,6 @@
 import { PgBoss } from "pg-boss";
 import { sql, transaction } from "../db";
+import { enqueueProfileCards } from "./profile-cards";
 import { HttpError } from "./errors";
 let promise: Promise<PgBoss> | undefined;
 export function getQueue() {
@@ -73,7 +74,10 @@ export async function publishProfile(id: string) {
     );
     return true;
   });
-  if (newlyPublished) await enqueueSync(id);
+  if (newlyPublished) {
+    await enqueueProfileCards(await getQueue(), id);
+    await enqueueSync(id);
+  }
 }
 export async function revokeDelegates(id: string) {
   await sql(
