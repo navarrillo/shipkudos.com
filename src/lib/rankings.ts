@@ -50,7 +50,7 @@ export async function rebuildRankingsIfDue(
 export async function rebuildRankings() {
   await transaction(async (client) => {
     await client.query(
-      "SELECT pg_advisory_xact_lock(hashtext('shipclout-rankings'))",
+      "SELECT pg_advisory_xact_lock(hashtext('shipkudos-rankings'))",
     );
     for (const period of [7, 30]) {
       const id = crypto.randomUUID();
