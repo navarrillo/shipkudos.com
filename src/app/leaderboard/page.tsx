@@ -1,9 +1,17 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { cachedLeaderboard } from "@/lib/data";
+import { leaderboardMetadata } from "@/lib/seo";
 import { Ranking } from "@/components/ranking";
 import { Ad } from "@/components/ad";
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Leaderboard" };
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}): Promise<Metadata> {
+  return leaderboardMetadata(await searchParams);
+}
 export default async function Leaderboard({
   searchParams,
 }: {

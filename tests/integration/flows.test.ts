@@ -7,7 +7,8 @@ import {
   registrationStatus,
   agentOwner,
 } from "../../src/lib/agents";
-import { rebuildRankings, leaderboard } from "../../src/lib/data";
+import { publicProfile, rebuildRankings, leaderboard } from "../../src/lib/data";
+import { publicProfileMetadata } from "../../src/lib/seo";
 import {
   RANK_REBUILD_AFTER_SYNC_MS,
   RANK_REBUILD_INTERVAL_MS,
@@ -106,6 +107,27 @@ describe("agent enrollment", () => {
     await expect(
       approveRegistration(a.registrationId, id, true),
     ).rejects.toMatchObject({ status: 409 });
+  });
+});
+describe("public profile metadata", () => {
+  it("builds a canonical profile URL from the configured base", async () => {
+    await sql(
+      "UPDATE profiles SET published_at=coalesce(published_at,now()), tools=ARRAY['Codex','Cursor','Grok'] WHERE id=$1",
+      [id],
+    );
+    const data = await publicProfile(login);
+    if (!data) throw new Error("published profile was not readable");
+    const meta = publicProfileMetadata(data.profile, data.ranks);
+    const base = new URL(process.env.APP_URL || "http://localhost:3000").href.replace(
+      /\/$/,
+      "",
+    );
+    expect(meta.alternates).toEqual({ canonical: `${base}/u/${login}` });
+    expect(meta.title).toBe(
+      `Integration builder (@${login}) — ships with Codex + Cursor + Grok`,
+    );
+    expect(meta.description).toContain("Codex, Cursor, Grok");
+    expect(meta.description).toContain(`(@${login})`);
   });
 });
 describe("ranking and campaign integrity", () => {

@@ -39,6 +39,7 @@ jobs:
               - 'bin/**'
               - 'migrations/**'
               - '.github/workflows/**'
+              - 'src/**'
               - 'tests/integration/**'
               - 'src/lib/github.ts'
   heavy:

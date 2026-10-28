@@ -31,12 +31,17 @@ export function requireProductionConfig() {
   ] as const) {
     if (!env[name]) throw new Error(`Missing environment variable: ${name}`);
   }
-  if (
-    env.NODE_ENV === "production" &&
-    !env.APP_URL.startsWith("https://") &&
-    !["localhost", "127.0.0.1"].includes(new URL(env.APP_URL).hostname)
-  )
-    throw new Error("Production APP_URL must use HTTPS");
+  if (env.NODE_ENV === "production") {
+    if (!process.env.APP_URL)
+      throw new Error("Missing environment variable: APP_URL");
+    const url = new URL(env.APP_URL);
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1")
+      throw new Error(
+        "Production APP_URL must not use a loopback host (localhost or 127.0.0.1)",
+      );
+    if (url.protocol !== "https:")
+      throw new Error("Production APP_URL must use HTTPS");
+  }
   if (
     env.BETTER_AUTH_SECRET!.length < 32 ||
     !/^[a-f0-9]{64}$/i.test(env.TOKEN_ENCRYPTION_KEY!)
