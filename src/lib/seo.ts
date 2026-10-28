@@ -33,7 +33,10 @@ export function agentsMetadata(): Metadata {
   return {
     title: "For agents",
     description: `Let a coding agent register your GitHub profile on ${app}, check your rank, and request a sync. Agent keys are scoped and revocable.`,
-    alternates: { canonical: canonicalUrl("/agents") },
+    alternates: {
+      canonical: canonicalUrl("/agents"),
+      types: { "text/markdown": "/agents.md" },
+    },
   };
 }
 
