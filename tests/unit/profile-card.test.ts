@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import { ImageResponse } from "next/og";
 import {
@@ -7,8 +7,15 @@ import {
   cardFooter,
   cardLogin,
   cardName,
+  last30Scores,
   ProfileCard,
 } from "../../src/lib/profile-card";
+
+import {
+  renderProfileCard,
+  profileCardVersion,
+  type CardData,
+} from "../../src/lib/render-profile-card";
 
 const name = "N".repeat(48);
 const login = "l".repeat(39);
@@ -54,7 +61,9 @@ describe("profile card render", () => {
           activeDays: 22,
           prs: 57,
           streak: 12,
-          scores: Array.from({ length: 30 }, (_, index) => (index % 4 === 0 ? 0 : 8)),
+          scores: Array.from({ length: 30 }, (_, index) =>
+            index % 4 === 0 ? 0 : 8,
+          ),
         }),
         { width: 1200, height: 630, fonts: cardFonts },
       ).arrayBuffer(),
@@ -76,6 +85,79 @@ describe("profile card render", () => {
       expect(red).toBeLessThan(30);
       expect(green).toBeLessThan(40);
       expect(blue).toBeLessThan(40);
+    }
+  });
+});
+
+describe("shared worker renderer", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("matches the original on-demand renderer pixel for pixel", async () => {
+    vi.stubEnv("APP_URL", "http://localhost:3000");
+    vi.stubEnv("APP_NAME", "ShipKudos");
+    const now = new Date("2026-10-28T12:00:00Z");
+    const data = {
+      profile: {
+        id: "pixel-owner",
+        github_id: "123",
+        login: "ada",
+        name: "Ada",
+        avatar: null,
+        bio: null,
+        tools: ["Codex"],
+        x_handle: "",
+        published_at: now,
+        hidden_at: null,
+        last_sync_at: now,
+        sync_state: "ready",
+        sync_error: null,
+        last_requested_at: null,
+        next_sync_at: now,
+      },
+      days: [
+        {
+          day: "2026-10-28",
+          score: 7,
+          commits: 3,
+          prs: 2,
+          issues: 1,
+          reviews: 1,
+        },
+      ],
+      ranks: [],
+    } satisfies CardData;
+    for (const period of [7, 30] as const) {
+      const original = await new ImageResponse(
+        React.createElement(ProfileCard, {
+          appName: "ShipKudos",
+          host: "localhost:3000",
+          login: "ada",
+          name: "Ada",
+          avatar: null,
+          tools: ["Codex"],
+          period,
+          position: null,
+          total: 0,
+          score: 7,
+          activeDays: 1,
+          prs: 2,
+          streak: 1,
+          scores: last30Scores(data.days, now),
+        }),
+        { width: 1200, height: 630, fonts: cardFonts },
+      ).arrayBuffer();
+      const rendered = await renderProfileCard(data, period, now);
+      const actualPixels = await sharp(Buffer.from(rendered)).raw().toBuffer();
+      const originalPixels = await sharp(Buffer.from(original)).raw().toBuffer();
+      expect(actualPixels.equals(originalPixels)).toBe(true);
+      const version = profileCardVersion(data, period, now);
+      expect(profileCardVersion(data, period, now)).toBe(version);
+      expect(
+        profileCardVersion(
+          { ...data, profile: { ...data.profile, name: "Grace" } },
+          period,
+          now,
+        ),
+      ).not.toBe(version);
     }
   });
 });

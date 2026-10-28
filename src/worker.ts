@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 import { PgBoss } from "pg-boss";
 import { requireProductionConfig } from "./lib/config";
 import { sql, getPool } from "./db";
+import {
+  PROFILE_CARDS_JOB,
+  backfillProfileCards,
+  enqueueProfileCards,
+  renderProfileCards,
+} from "./lib/profile-cards";
 import { syncGitHub } from "./lib/github";
 import {
   rebuildRankingsIfDue,
@@ -42,11 +48,30 @@ await boss.work<{ profileId: string }>(
       jobs.map(async (job) => {
         const completed = await syncGitHub(job.data.profileId);
         recordGitHubSync(ranks, completed);
+        if (completed) {
+          try {
+            // Finish both PNGs before this successful sync job completes.
+            await renderProfileCards(job.data.profileId);
+          } catch {
+            await enqueueProfileCards(boss, job.data.profileId);
+          }
+        }
         progress = new Date();
       }),
     );
   },
 );
+await boss.work<{ profileId: string }>(
+  PROFILE_CARDS_JOB,
+  { batchSize: 1, pollingIntervalSeconds: 2 },
+  async (jobs) => {
+    for (const job of jobs) {
+      await renderProfileCards(job.data.profileId);
+      progress = new Date();
+    }
+  },
+);
+await backfillProfileCards(boss);
 try {
   while (!stopping) {
     const due = await sql(
@@ -58,7 +83,8 @@ try {
         { profileId: row.id },
         { singletonKey: row.id, priority: row.last_sync_at ? 0 : 10 },
       );
-    await rebuildRankingsIfDue(ranks, Date.now());
+    if (await rebuildRankingsIfDue(ranks, Date.now()))
+      await backfillProfileCards(boss);
     if (Date.now() - lastClean > 3600000) {
       await sql(
         "UPDATE agent_registrations SET state='expired' WHERE expires_at<now() AND state IN ('pending','approved')",

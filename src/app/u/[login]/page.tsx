@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import Image from "next/image";
 import { ShieldCheck, GitFork, ArrowUpRight } from "lucide-react";
-import { cachedPublicProfile, shareLinks } from "@/lib/data";
+import { cachedPublicProfile } from "@/lib/data";
 import { streak } from "@/lib/domain";
+import { storedShareLinks } from "@/lib/profile-cards";
 import { explicitPeriod } from "@/lib/share";
 import {
   profileCanonical,
@@ -37,7 +38,8 @@ export async function generateMetadata({
       title: "Builder not found",
       alternates: { canonical: profileCanonical(login) },
     });
-  return profileSocialMetadata(data, explicitPeriod(query.period));
+  const links = await storedShareLinks(data, explicitPeriod(query.period));
+  return profileSocialMetadata(data, explicitPeriod(query.period), links.imageUrl);
 }
 export default async function Profile({
   params,
@@ -55,7 +57,7 @@ export default async function Profile({
     weekly = ranks.find((r) => r.period === 7),
     monthly = ranks.find((r) => r.period === 30),
     current = streak(days),
-    links = shareLinks(data, explicitPeriod(query.period));
+    links = await storedShareLinks(data, explicitPeriod(query.period));
   return (
     <>
       <section className="page-head">
