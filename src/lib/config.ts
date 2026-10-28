@@ -4,6 +4,7 @@ const schema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
+  APP_ENV: z.enum(["production", "staging"]).default("production"),
   APP_NAME: z.string().default("ShipKudos"),
   APP_URL: z.url().default("http://localhost:3000"),
   DATABASE_URL: z.string().optional(),
@@ -18,7 +19,20 @@ const schema = z.object({
   WORKER_HEARTBEAT_SECONDS: z.coerce.number().int().min(30).default(120),
   QUEUE_STALL_SECONDS: z.coerce.number().int().min(60).default(600),
 });
-export const config = () => schema.parse(process.env);
+const PRODUCTION_HOSTS = new Set(["shipkudos.com", "www.shipkudos.com"]);
+export const config = () => {
+  const appEnv = process.env.APP_ENV?.trim();
+  const env = schema.parse({
+    ...process.env,
+    APP_ENV: appEnv ? appEnv : undefined,
+  });
+  if (env.APP_ENV === "staging") {
+    const host = new URL(env.APP_URL).hostname;
+    if (PRODUCTION_HOSTS.has(host))
+      throw new Error("Staging APP_URL must not use the production host");
+  }
+  return env;
+};
 export function requireProductionConfig() {
   const env = config();
   for (const name of [

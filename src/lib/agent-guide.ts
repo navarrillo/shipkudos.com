@@ -34,6 +34,7 @@ export function agentGuide() {
   const pending = {
     registrationId: created.registrationId,
     state: "pending",
+    authorizationUrl: created.authorizationUrl,
     expiresAt: created.expiresAt,
     interval: REGISTRATION_POLL_INTERVAL_SECONDS,
   };
@@ -71,7 +72,7 @@ You act on behalf of a person, not as a separate ranked bot. Read these instruct
 Base URL: ${base}
 OpenAPI: ${base}/openapi.json
 
-Error responses are JSON \`{"error":"<code>"}\` with \`Cache-Control: no-store\`. HTTP 429 responses also send \`Retry-After\` (seconds to wait). Example: \`{"error":"invalid_request"}\`.
+Error responses are JSON \`{"error":"<code>"}\` with \`Cache-Control: no-store\`. HTTP 429 responses also send \`Retry-After\` (seconds to wait). Validation errors also include \`issues\`, an array of \`{ "path": "name", "message": "..." }\` entries. Paths use dot notation for nested fields; an empty path refers to the whole body. Malformed JSON returns \`{ "error": "invalid_request", "issues": [{ "path": "", "message": "Malformed JSON" }] }\`.
 
 ## 1. Create a registration
 
@@ -98,11 +99,11 @@ ${JSON.stringify(created, null, 2)}
 
 \`registrationToken\` in the example is a placeholder, not a credential. The example registration was created at 2026-10-27T23:04:30.000Z. \`expiresAt\` is the pending deadline, ${pendingMinutes} minutes after creation. \`interval\` is the minimum number of seconds between status polls.
 
-Malformed JSON or a body that fails validation returns 400 \`{"error":"invalid_request"}\`. A POST with no body returns 400 \`{"error":"missing_body"}\`.
+Malformed JSON or a body that fails validation returns 400 \`invalid_request\` with \`issues\` identifying each failing field. A POST with no body returns 400 \`{"error":"missing_body"}\`.
 
 ## 2. Ask the user to approve
 
-Open \`authorizationUrl\` in your browser if your user has authorized you to complete registration. Otherwise give that exact link to your user. GitHub may require login or approval. Do not request a GitHub PAT or password and do not bypass a verification step.
+Give the exact \`authorizationUrl\` to your user in chat, terminal output or another channel they can read. You cannot open the owner's browser or use their signed-in session; the owner must open the link and complete GitHub login or approval within the 60-minute pending window. Do not request a GitHub PAT or password and do not bypass a verification step.
 
 Approving publishes the user's profile if it is not already published. Tell your user that before they approve. The authorization page asks them to confirm publication and the permissions listed there.
 
@@ -121,6 +122,8 @@ ${JSON.stringify(approved, null, 2)}
 GET /api/v1/agent-registrations/{registrationId}
 Authorization: Bearer {registrationToken}
 
+Poll in a background process so polling continues between chat turns, and exchange immediately when \`state\` becomes \`approved\`. An agent that acts only on chat turns can miss the 10-minute exchange window.
+
 Wait at least \`interval\` seconds (${REGISTRATION_POLL_INTERVAL_SECONDS}) between polls. A faster poll returns HTTP 429 \`{"error":"poll_too_fast"}\` and \`Retry-After: ${REGISTRATION_POLL_INTERVAL_SECONDS}\`.
 
 A pending registration expires ${pendingMinutes} minutes after it is created. If it expires, create a new registration and send the new link. Do not reuse the old link.
@@ -131,7 +134,7 @@ Example 200 response:
 ${JSON.stringify(pending, null, 2)}
 \`\`\`
 
-Stop on \`rejected\` or \`expired\`. A registration id that is not a UUID returns 400 \`{"error":"invalid_request"}\`. A missing Authorization header returns 401 \`{"error":"invalid_credential"}\`. A token that does not match this registration returns 401 \`{"error":"invalid_registration_credential"}\`.
+While \`pending\`, the response includes \`authorizationUrl\` so you can recover the owner link without creating another registration. Other states omit it. Stop on \`rejected\`, \`expired\` or \`completed\`. Polling an already-exchanged registration returns HTTP 200 \`completed\`; only a repeated exchange returns HTTP 409. A registration id that is not a UUID returns 400 \`invalid_request\` with \`issues\` identifying the failing field. A missing Authorization header returns 401 \`{"error":"invalid_credential"}\`. A token that does not match this registration returns 401 \`{"error":"invalid_credential"}\`.
 
 ## 4. Exchange
 
@@ -143,9 +146,9 @@ Example 200 response:
 ${JSON.stringify(exchanged, null, 2)}
 \`\`\`
 
-The ShipKudos token (\`token\`, prefix \`sc_\`) is returned only once and expires after 90 days. \`tokenType\` is \`Bearer\`. The example was exchanged at 2026-10-27T23:40:00.000Z, so its \`expiresAt\` is 90 days later. If you lose the token, ask your user to revoke the grant and start again. A second exchange, or an exchange while the registration is not \`approved\`, returns 409 \`{"error":"registration_not_exchangeable"}\`.
+The ShipKudos token (\`token\`, prefix \`sc_\`) is returned only once and expires after 90 days. Store it outside the chat/model context, for example in a file with mode 0600 or a secret store. Never print it or include it in logs or chat. \`tokenType\` is \`Bearer\`. The example was exchanged at 2026-10-27T23:40:00.000Z, so its \`expiresAt\` is 90 days later. If you lose the token, ask your user to revoke the grant and start again. A second exchange, or an exchange while the registration is not \`approved\`, returns 409 \`{"error":"registration_not_exchangeable"}\`.
 
-After the exchange, call GET /api/v1/me and confirm with your user that the returned \`login\` (\`profile.login\`) is theirs before you rely on the credential. If it is someone else, stop and ask them to revoke the key in /dashboard.
+Immediately after the exchange, call GET /api/v1/me to learn which GitHub account approved; you cannot know that before this call. Read the response and confirm with your user that the returned \`login\` (\`profile.login\`) is theirs before you rely on the credential. If it is someone else, stop and ask them to revoke the key in /dashboard.
 
 ## 5. Read the profile, sync and share
 
@@ -171,9 +174,9 @@ POST /api/v1/me/sync requests an update. Manual dashboard requests and agent req
 {"state":"queued"}
 \`\`\`
 
-A second request during that hour is HTTP 429 \`{"error":"sync_cooldown"}\` with \`Retry-After\` set to the remaining seconds.
+The cooldown is per profile, not per credential: a second agent for the same owner inherits it. A second request during that hour is HTTP 429 \`{"error":"sync_cooldown"}\` with \`Retry-After\` set to the remaining seconds.
 
-GET /api/v1/me/share?period=7 returns \`profileUrl\`, \`imageUrl\`, \`text\`, \`intentUrl\` and \`period\`. The query \`period\` is \`7\` or \`30\`; omit it to use the period where the builder ranks higher. Any other period returns 400 \`{"error":"invalid_request"}\`.
+GET /api/v1/me/share?period=7 returns \`profileUrl\`, \`imageUrl\`, \`text\`, \`intentUrl\` and \`period\`. The query \`period\` is \`7\` or \`30\`; omit it to use the period where the builder ranks higher. Any other period returns 400 \`invalid_request\` with \`issues\` identifying the failing field.
 
 \`\`\`json
 ${JSON.stringify(share, null, 2)}
@@ -191,8 +194,7 @@ ${SCOPES.join(", ")}. No account deletion, profile editing, advertising manageme
 | --- | --- | --- |
 | 400 | invalid_request | The body or a parameter failed validation. This includes a registration id that is not a UUID, a share \`period\` other than 7 or 30, and malformed JSON. |
 | 400 | missing_body | A request that requires a JSON body was sent without one. |
-| 401 | invalid_credential | The Authorization header is missing or malformed, or the ShipKudos token is unknown, expired or revoked. A registration token cannot call /api/v1/me. \`invalid_credential\` is also returned when the profile is unpublished, hidden, or needs a GitHub reconnect. |
-| 401 | invalid_registration_credential | The registration id and registrationToken do not match. |
+| 401 | invalid_credential | The Authorization header is missing or malformed, the registration id and registrationToken do not match, or the ShipKudos token is unknown, expired or revoked. A registration token cannot call /api/v1/me. \`invalid_credential\` is also returned when the profile is unpublished, hidden, or needs a GitHub reconnect. |
 | 403 | insufficient_scope | The credential does not include the scope this route requires. |
 | 409 | registration_not_exchangeable | Exchange was called when \`state\` is not \`approved\`, the registration has no owner, the exchange window has passed, or the registration was already exchanged. |
 | 409 | profile_unavailable | The profile is missing or hidden. Exchange returns this. Approval can also return it to the signed-in user. |

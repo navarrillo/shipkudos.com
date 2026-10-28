@@ -10,6 +10,17 @@ test("public navigation and agent instructions", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: /Your bot can take/ }),
   ).toBeVisible();
+  await expect(
+    page.locator('head link[rel="alternate"][type="text/markdown"]'),
+  ).toHaveAttribute("href", /\/agents\.md$/);
+  const steps = page.getByRole("region", { name: "For agents" });
+  await expect(steps.locator("li")).toHaveCount(4);
+  await expect(
+    steps.getByRole("link", { name: "agent API guide" }),
+  ).toHaveAttribute("href", "/agents.md");
+  await expect(
+    steps.getByRole("link", { name: "OpenAPI specification" }),
+  ).toHaveAttribute("href", "/openapi.json");
   await page.getByRole("link", { name: /Read the agent guide/ }).click();
   await expect(page.locator("body")).toContainText("registrationToken");
 });

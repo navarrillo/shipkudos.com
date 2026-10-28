@@ -64,9 +64,9 @@ describe("agent enrollment", () => {
       platform: "HTTP",
     });
     expect(r.authorizationUrl).not.toContain(r.registrationToken);
-    expect(
-      (await registrationStatus(r.registrationId, r.registrationToken)).state,
-    ).toBe("pending");
+    const pending = await registrationStatus(r.registrationId, r.registrationToken);
+    expect(pending.state).toBe("pending");
+    expect(pending.authorizationUrl).toBe(r.authorizationUrl);
     await expect(
       exchangeRegistration(r.registrationId, r.registrationToken),
     ).rejects.toMatchObject({ status: 409 });
@@ -86,6 +86,10 @@ describe("agent enrollment", () => {
     await expect(
       exchangeRegistration(r.registrationId, r.registrationToken),
     ).rejects.toMatchObject({ status: 409 });
+    await sql("UPDATE agent_registrations SET polled_at=NULL WHERE id=$1", [r.registrationId]);
+    const completed = await registrationStatus(r.registrationId, r.registrationToken);
+    expect(completed.state).toBe("completed");
+    expect(completed).not.toHaveProperty("authorizationUrl");
     const [stored] = await sql(
       "SELECT token_hash FROM agent_credentials WHERE id=$1",
       [grant.credentialId],
@@ -108,7 +112,7 @@ describe("agent enrollment", () => {
       b = await createRegistration({ name: "B", platform: "HTTP" });
     await expect(
       registrationStatus(a.registrationId, b.registrationToken),
-    ).rejects.toMatchObject({ status: 401 });
+    ).rejects.toMatchObject({ status: 401, code: "invalid_credential" });
     await sql(
       "UPDATE agent_registrations SET expires_at=now()-interval '1 second' WHERE id=$1",
       [a.registrationId],

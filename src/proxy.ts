@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isStaging } from "@/lib/runtime";
 import { canonicalUrl, profilePathRedirect } from "@/lib/seo";
 
 export function proxy(request: NextRequest) {
@@ -6,8 +7,13 @@ export function proxy(request: NextRequest) {
     request.nextUrl.pathname,
     request.nextUrl.search,
   );
-  if (!target) return NextResponse.next();
-  return NextResponse.redirect(canonicalUrl(target), 308);
+  const response = target
+    ? NextResponse.redirect(canonicalUrl(target), 308)
+    : NextResponse.next();
+  if (isStaging()) response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  return response;
 }
 
-export const config = { matcher: "/u/:login" };
+export const config = {
+  matcher: ["/((?!_next/static|_next/image).*)"],
+};

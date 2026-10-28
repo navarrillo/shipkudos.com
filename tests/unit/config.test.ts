@@ -3,6 +3,7 @@ import { requireProductionConfig } from "../../src/lib/config";
 
 const keys = [
   "NODE_ENV",
+  "APP_ENV",
   "APP_URL",
   "DATABASE_URL",
   "BETTER_AUTH_SECRET",
@@ -67,7 +68,32 @@ describe("production APP_URL", () => {
   it("accepts a public https URL and keeps the local default outside production", () => {
     withEnv({ ...production, APP_URL: "https://shipkudos.com" });
     expect(requireProductionConfig().APP_URL).toBe("https://shipkudos.com");
+    expect(requireProductionConfig().APP_ENV).toBe("production");
     withEnv({ ...production, NODE_ENV: "development" });
     expect(requireProductionConfig().APP_URL).toBe("http://localhost:3000");
+  });
+
+  it("treats a blank APP_ENV as production and accepts a staging host", () => {
+    withEnv({ ...production, APP_ENV: "", APP_URL: "https://shipkudos.com" });
+    expect(requireProductionConfig().APP_ENV).toBe("production");
+    withEnv({
+      ...production,
+      APP_ENV: "staging",
+      APP_URL: "https://staging.shipkudos.com",
+    });
+    expect(requireProductionConfig().APP_ENV).toBe("staging");
+    expect(requireProductionConfig().APP_URL).toBe(
+      "https://staging.shipkudos.com",
+    );
+  });
+
+  it("refuses the production host when APP_ENV is staging", () => {
+    for (const APP_URL of [
+      "https://shipkudos.com",
+      "https://www.shipkudos.com",
+    ]) {
+      withEnv({ ...production, APP_ENV: "staging", APP_URL });
+      expect(() => requireProductionConfig()).toThrow(/production host/);
+    }
   });
 });

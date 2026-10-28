@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Command, ArrowUpRight } from "lucide-react";
+import { Analytics } from "@/components/analytics";
+import { StagingMark } from "@/components/staging-mark";
 import { config } from "@/lib/config";
 import { rootMetadata } from "@/lib/seo";
 import "./globals.css";
@@ -13,6 +15,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
+        <StagingMark />
         <a href="#main" className="skip">
           Skip to content
         </a>
@@ -61,6 +64,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </footer>
         </div>
+        <Analytics />
       </body>
     </html>
   );

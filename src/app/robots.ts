@@ -1,7 +1,9 @@
 import type { MetadataRoute } from "next";
-import { config } from "@/lib/config";
+import { canonicalUrl } from "@/lib/seo";
+import { isStaging } from "@/lib/runtime";
 export const dynamic = "force-dynamic";
 export default function robots(): MetadataRoute.Robots {
+  if (isStaging()) return { rules: [{ userAgent: "*", disallow: "/" }] };
   return {
     rules: [
       {
@@ -10,6 +12,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/api/", "/admin", "/dashboard", "/agents/authorize/"],
       },
     ],
-    sitemap: `${config().APP_URL}/sitemap.xml`,
+    sitemap: canonicalUrl("/sitemap.xml"),
   };
 }

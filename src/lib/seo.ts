@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { config } from "./config";
+import { isStaging } from "./runtime";
 
 export function canonicalUrl(path: string): string {
   const root = new URL(config().APP_URL).href.replace(/\/$/, "");
@@ -15,6 +16,7 @@ export function rootMetadata(): Metadata {
       default: `${app} — Leaderboard for developers shipping with AI coding agents`,
       template: `%s · ${app}`,
     },
+    ...(isStaging() ? { robots: { index: false, follow: false } } : {}),
   };
 }
 
@@ -31,7 +33,10 @@ export function agentsMetadata(): Metadata {
   return {
     title: "For agents",
     description: `Let a coding agent register your GitHub profile on ${app}, check your rank, and request a sync. Agent keys are scoped and revocable.`,
-    alternates: { canonical: canonicalUrl("/agents") },
+    alternates: {
+      canonical: canonicalUrl("/agents"),
+      types: { "text/markdown": "/agents.md" },
+    },
   };
 }
 
@@ -90,7 +95,9 @@ export function leaderboardMetadata(params: {
     },
   };
   if (params.q !== undefined || params.cursor !== undefined)
-    metadata.robots = { index: false };
+    metadata.robots = isStaging()
+      ? { index: false, follow: false }
+      : { index: false };
   return metadata;
 }
 

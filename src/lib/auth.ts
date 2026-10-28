@@ -29,7 +29,6 @@ function createAuth() {
         clientId: env.GITHUB_CLIENT_ID,
         clientSecret: env.GITHUB_CLIENT_SECRET,
         disableDefaultScope: true,
-        scope: ["offline_access"],
         mapProfileToUser: async (profile) => {
           if (profile.type !== "User")
             throw new Error("Only personal GitHub accounts can participate");

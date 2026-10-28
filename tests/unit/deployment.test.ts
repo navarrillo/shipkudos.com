@@ -96,6 +96,23 @@ describe("release recovery", () => {
     ).toHaveLength(1);
     expect(f.commands()).not.toContain("down");
     expect(f.commands()).not.toContain("up -d --no-deps postgres");
+    expect(f.commands()).toContain(
+      `pull ghcr.io/example/shipkudos:${f.next} |`,
+    );
+    expect(f.commands()).not.toContain("development-");
+  });
+  it("pulls the channel tag and refuses production tag names", () => {
+    const f = fixture();
+    const deployed = f.run("deploy", { IMAGE_CHANNEL: "development" });
+    expect(deployed.status, deployed.stderr).toBe(0);
+    expect(f.commands()).toContain(
+      `pull ghcr.io/example/shipkudos:development-${f.next} |`,
+    );
+    expect(f.commands()).not.toContain(
+      `pull ghcr.io/example/shipkudos:${f.next} |`,
+    );
+    expect(f.run("deploy", { IMAGE_CHANNEL: "latest" }).status).toBe(2);
+    expect(f.run("deploy", { IMAGE_CHANNEL: "v1.2.3" }).status).toBe(2);
   });
   it("pull failure keeps the running release and never migrates", () => {
     const f = fixture();
