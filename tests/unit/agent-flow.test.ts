@@ -13,6 +13,7 @@ import { config } from "../../src/lib/config";
 import {
   PUBLIC_LEADERBOARD_FIELDS,
   PUBLIC_PROFILE_FIELDS,
+  exampleShareInput,
   shareLinks,
   toPublicLeaderboard,
   toPublicProfileView,
@@ -300,7 +301,9 @@ describe("agent documentation", () => {
     );
     expect(guide).toContain('{"error":"rate_limited"}');
     expect(guide).toContain("Retry-After");
-    expect(guide).toContain(JSON.stringify(shareLinks("octocat", 7), null, 2));
+    expect(guide).toContain(
+      JSON.stringify(shareLinks(exampleShareInput, 7), null, 2),
+    );
     for (const code of [
       "invalid_request",
       "missing_body",
@@ -386,9 +389,11 @@ describe("agent documentation", () => {
       "profileUrl",
       "imageUrl",
       "text",
+      "intentUrl",
+      "period",
     ]);
     expect(spec.components.schemas.ShareLinks.example).toEqual(
-      shareLinks("octocat", 7),
+      shareLinks(exampleShareInput, 7),
     );
     expect(spec.components.schemas.Error.required).toEqual(["error"]);
     expect(spec.components.schemas.PublicProfile.properties.profile.required).toEqual(

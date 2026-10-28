@@ -21,6 +21,7 @@ import { generateMetadata as advertisePageMetadata } from "../../src/app/adverti
 import { generateMetadata as infoPageMetadata } from "../../src/app/[info]/page";
 import { generateMetadata as leaderboardPageMetadata } from "../../src/app/leaderboard/page";
 import { generateMetadata as profilePageMetadata } from "../../src/app/u/[login]/page";
+import { withSocial } from "../../src/lib/social";
 
 const previousUrl = process.env.APP_URL;
 const previousName = process.env.APP_NAME;
@@ -62,18 +63,18 @@ describe("canonical URLs", () => {
   });
 
   it("points each public page at its own canonical URL", async () => {
-    expect(homePageMetadata()).toEqual(homeMetadata());
-    expect(agentsPageMetadata()).toEqual(agentsMetadata());
-    expect(advertisePageMetadata()).toEqual(advertiseMetadata());
+    expect(homePageMetadata()).toEqual(withSocial(homeMetadata()));
+    expect(agentsPageMetadata()).toEqual(withSocial(agentsMetadata()));
+    expect(advertisePageMetadata()).toEqual(withSocial(advertiseMetadata()));
     expect(
       await infoPageMetadata({ params: Promise.resolve({ info: "methodology" }) }),
-    ).toEqual(infoMetadata("methodology"));
+    ).toEqual(withSocial(infoMetadata("methodology")!));
     expect(
       await infoPageMetadata({ params: Promise.resolve({ info: "privacy" }) }),
-    ).toEqual(infoMetadata("privacy"));
+    ).toEqual(withSocial(infoMetadata("privacy")!));
     expect(
       await infoPageMetadata({ params: Promise.resolve({ info: "terms" }) }),
-    ).toEqual(infoMetadata("terms"));
+    ).toEqual(withSocial(infoMetadata("terms")!));
     expect(homeMetadata().alternates?.canonical).toBe("https://shipkudos.com");
     expect(agentsMetadata().alternates?.canonical).toBe(
       "https://shipkudos.com/agents",

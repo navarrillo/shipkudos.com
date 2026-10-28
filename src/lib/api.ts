@@ -177,12 +177,15 @@ export const dispatch = route(async (request: Request) => {
     }
     if (endpoint === "v1/me/share" && method === "GET") {
       const p = await ownProfile(id);
+      const requested = url.searchParams.get("period");
+      const period = requested
+        ? (Number(z.enum(["7", "30"]).parse(requested)) as 7 | 30)
+        : undefined;
+      const published = await cachedPublicProfile(p.login);
       return json(
         shareLinks(
-          p.login,
-          Number(
-            z.enum(["7", "30"]).parse(url.searchParams.get("period") || "7"),
-          ),
+          published ?? { profile: p, days: [], ranks: [] },
+          period,
         ),
       );
     }

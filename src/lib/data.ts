@@ -1,8 +1,8 @@
 import { unstable_cache } from "next/cache";
 import { sql } from "../db";
-import { config } from "./config";
 import { HttpError } from "./http";
 import { signPayload, verifyPayload } from "./crypto";
+import { shareLinks as buildShareLinks } from "./share";
 
 export type Profile = {
   id: string;
@@ -152,8 +152,12 @@ export async function publicProfile(login: string) {
     position: number;
     score: number;
     active_days: number;
+    commits: number;
+    prs: number;
+    total: number;
+    snapshot_id: string;
   }>(
-    `SELECT s.period,e.position,e.score,e.active_days FROM ranking_entries e JOIN ranking_snapshots s ON s.id=e.snapshot_id WHERE e.profile_id=$1 AND s.id IN (SELECT DISTINCT ON(period) id FROM ranking_snapshots ORDER BY period,created_at DESC) AND $2::timestamptz>now()-interval '48 hours'`,
+    `SELECT s.period,s.id AS snapshot_id,e.position,e.score,e.active_days,e.commits,e.prs,(SELECT count(*)::int FROM ranking_entries WHERE snapshot_id=s.id) AS total FROM ranking_entries e JOIN ranking_snapshots s ON s.id=e.snapshot_id WHERE e.profile_id=$1 AND s.id IN (SELECT DISTINCT ON(period) id FROM ranking_snapshots ORDER BY period,created_at DESC) AND $2::timestamptz>now()-interval '48 hours'`,
     [profile.id, profile.last_sync_at],
   );
   return { profile, days, ranks };
@@ -220,6 +224,10 @@ export function toPublicProfileView(data: {
     position: number;
     score: number;
     active_days: number;
+    commits?: number;
+    prs?: number;
+    total?: number;
+    snapshot_id?: string;
   }[];
 }) {
   const profile: PublicProfileIdentity = {
@@ -278,11 +286,20 @@ export function toPublicLeaderboard(result: {
     nextCursor: result.nextCursor,
   };
 }
-export function shareLinks(login: string, period = 7) {
-  const url = `${config().APP_URL}/u/${encodeURIComponent(login)}`;
-  return {
-    profileUrl: url,
-    imageUrl: `${config().APP_URL}/api/og/${encodeURIComponent(login)}?period=${period}`,
-    text: `See what I've been building. My last ${period} days on ${config().APP_NAME}: ${url}`,
-  };
+export function shareLinks(
+  data: Parameters<typeof buildShareLinks>[0],
+  period?: 7 | 30,
+) {
+  return buildShareLinks(data, period);
 }
+/** Stable sample for the agent guide and OpenAPI, matching GET /api/v1/me/share. */
+export const exampleShareInput = {
+  profile: {
+    login: "octocat",
+    name: "The Octocat",
+    tools: [] as string[],
+    last_sync_at: "2026-10-27T21:22:00.000Z",
+  },
+  days: [],
+  ranks: [],
+} satisfies Parameters<typeof buildShareLinks>[0];

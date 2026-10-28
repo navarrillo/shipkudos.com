@@ -11,12 +11,13 @@ import {
 import { cachedLeaderboard } from "@/lib/data";
 import { config } from "@/lib/config";
 import { homeMetadata } from "@/lib/seo";
+import { withSocial } from "@/lib/social";
 import { SignIn } from "@/components/actions";
 import { Ranking } from "@/components/ranking";
 import { Ad } from "@/components/ad";
 export const dynamic = "force-dynamic";
 export function generateMetadata(): Metadata {
-  return homeMetadata();
+  return withSocial(homeMetadata());
 }
 export default async function Home() {
   const env = config();

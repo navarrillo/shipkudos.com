@@ -2,6 +2,7 @@ import { SCOPES } from "./domain";
 import {
   PUBLIC_LEADERBOARD_FIELDS,
   PUBLIC_PROFILE_FIELDS,
+  exampleShareInput,
   shareLinks,
 } from "./data";
 import {
@@ -73,7 +74,7 @@ const idParameter = {
 };
 
 export function agentOpenApi(appUrl: string, appName: string) {
-  const share = shareLinks("octocat", 7);
+  const share = shareLinks(exampleShareInput, 7);
   const pendingMinutes = REGISTRATION_PENDING_MS / 60000;
   const exchangeMinutes = REGISTRATION_EXCHANGE_MS / 60000;
   return {
@@ -211,11 +212,13 @@ export function agentOpenApi(appUrl: string, appName: string) {
         ShareLinks: {
           type: "object",
           additionalProperties: false,
-          required: ["profileUrl", "imageUrl", "text"],
+          required: ["profileUrl", "imageUrl", "text", "intentUrl", "period"],
           properties: {
             profileUrl: { type: "string", format: "uri" },
             imageUrl: { type: "string", format: "uri" },
             text: { type: "string" },
+            intentUrl: { type: "string", format: "uri" },
+            period: { type: "integer", enum: [7, 30] },
           },
           example: share,
         },
@@ -484,7 +487,7 @@ export function agentOpenApi(appUrl: string, appName: string) {
       },
       "/api/v1/me/share": {
         get: operation(
-          "Get profileUrl, imageUrl and suggested text",
+          "Get profileUrl, imageUrl, suggested text and the X intent",
           true,
           {
             "200": json(
