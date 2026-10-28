@@ -49,7 +49,7 @@ const content: Record<string, { title: string; sections: [string, string][] }> =
         ],
         [
           "Retention and deletion",
-          "Detailed activity is retained for 60 days and daily rank history for 30 days. Pending registrations expire after 15 minutes; expired entries are removed within 24 hours. Deletion removes account data from the active database. Server-managed backups may retain older data until their retention period ends.",
+          "Detailed activity is retained for 60 days and daily rank history for 30 days. Pending registrations expire after 60 minutes. Approval then allows about 10 minutes to finish registration. Expired entries are removed within 24 hours. Deletion removes account data from the active database. Server-managed backups may retain older data until their retention period ends.",
         ],
         [
           "Contact",

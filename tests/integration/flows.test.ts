@@ -1,4 +1,9 @@
-import { afterAll, beforeAll, describe, it, expect } from "vitest";
+import { afterAll, beforeAll, describe, it, expect, vi } from "vitest";
+
+vi.mock("next/cache", () => ({
+  unstable_cache: (fn: (...args: unknown[]) => Promise<unknown>) => fn,
+  revalidateTag: () => undefined,
+}));
 import { sql, getPool } from "../../src/db";
 import {
   createRegistration,
@@ -7,7 +12,14 @@ import {
   registrationStatus,
   agentOwner,
 } from "../../src/lib/agents";
-import { publicProfile, rebuildRankings, leaderboard } from "../../src/lib/data";
+import { dispatch } from "../../src/lib/api";
+import {
+  PUBLIC_LEADERBOARD_FIELDS,
+  PUBLIC_PROFILE_FIELDS,
+  publicProfile,
+  rebuildRankings,
+  leaderboard,
+} from "../../src/lib/data";
 import { publicProfileMetadata } from "../../src/lib/seo";
 import {
   RANK_REBUILD_AFTER_SYNC_MS,
@@ -108,6 +120,60 @@ describe("agent enrollment", () => {
       approveRegistration(a.registrationId, id, true),
     ).rejects.toMatchObject({ status: 409 });
   });
+  it("keeps a pending registration for 60 minutes and opens a fresh 10 minute exchange window", async () => {
+    const r = await createRegistration({ name: "Window", platform: "HTTP" });
+    const pendingLeft = new Date(r.expiresAt).getTime() - Date.now();
+    expect(pendingLeft).toBeGreaterThan(59 * 60 * 1000);
+    expect(pendingLeft).toBeLessThanOrEqual(60 * 60 * 1000);
+    await sql(
+      "UPDATE agent_registrations SET expires_at=now()+interval '20 seconds' WHERE id=$1",
+      [r.registrationId],
+    );
+    await approveRegistration(r.registrationId, id, true);
+    const [row] = await sql<{ expires_at: Date; state: string }>(
+      "SELECT state,expires_at FROM agent_registrations WHERE id=$1",
+      [r.registrationId],
+    );
+    expect(row.state).toBe("approved");
+    const exchangeLeft = new Date(row.expires_at).getTime() - Date.now();
+    expect(exchangeLeft).toBeGreaterThan(9 * 60 * 1000);
+    expect(exchangeLeft).toBeLessThanOrEqual(10 * 60 * 1000 + 5000);
+    const status = await registrationStatus(
+      r.registrationId,
+      r.registrationToken,
+    );
+    expect(status.state).toBe("approved");
+    expect(new Date(status.expiresAt).getTime()).toBeGreaterThan(
+      Date.now() + 9 * 60 * 1000,
+    );
+    const grant = await exchangeRegistration(
+      r.registrationId,
+      r.registrationToken,
+    );
+    expect(grant.token.startsWith("sc_")).toBe(true);
+    expect(grant.tokenType).toBe("Bearer");
+  });
+  it("rejects a second approval", async () => {
+    const r = await createRegistration({ name: "Second", platform: "HTTP" });
+    await approveRegistration(r.registrationId, id, true);
+    await expect(
+      approveRegistration(r.registrationId, id, true),
+    ).rejects.toMatchObject({ status: 409, code: "registration_unavailable" });
+  });
+  it("rejects an exchange after the 10 minute window", async () => {
+    const r = await createRegistration({ name: "Late", platform: "HTTP" });
+    await approveRegistration(r.registrationId, id, true);
+    await sql(
+      "UPDATE agent_registrations SET expires_at=now()-interval '1 second' WHERE id=$1",
+      [r.registrationId],
+    );
+    await expect(
+      exchangeRegistration(r.registrationId, r.registrationToken),
+    ).rejects.toMatchObject({
+      status: 409,
+      code: "registration_not_exchangeable",
+    });
+  });
 });
 describe("public profile metadata", () => {
   it("builds a canonical profile URL from the configured base", async () => {
@@ -143,6 +209,50 @@ describe("ranking and campaign integrity", () => {
     await sql("UPDATE profiles SET hidden_at=now() WHERE id=$1", [id]);
     expect((await leaderboard(7, login)).entries).toHaveLength(0);
     await sql("UPDATE profiles SET hidden_at=NULL WHERE id=$1", [id]);
+  });
+  it("serves allowlisted profile and leaderboard fields through the public API", async () => {
+    await sql(
+      `INSERT INTO daily_stats(profile_id,day,commits,prs,issues,reviews) VALUES($1,current_date,7,2,1,3)
+       ON CONFLICT (profile_id,day) DO UPDATE SET commits=7,prs=2,issues=1,reviews=3`,
+      [id],
+    );
+    await sql(
+      "UPDATE profiles SET hidden_at=NULL,published_at=now(),last_sync_at=now() WHERE id=$1",
+      [id],
+    );
+    await rebuildRankings();
+    const profileResponse = await dispatch(
+      new Request(`http://localhost/api/profiles/${login}`),
+    );
+    expect(profileResponse.status).toBe(200);
+    const profile = await profileResponse.json();
+    expect(Object.keys(profile).sort()).toEqual(["days", "profile", "ranks"]);
+    expect(Object.keys(profile.profile)).toEqual([...PUBLIC_PROFILE_FIELDS]);
+    expect(profile.profile.login).toBe(login);
+    const profileJson = JSON.stringify(profile);
+    expect(profileJson).not.toContain(githubId);
+    expect(profileJson).not.toContain(id);
+    const boardResponse = await dispatch(
+      new Request(
+        `http://localhost/api/leaderboard?period=7&q=${encodeURIComponent(login)}`,
+      ),
+    );
+    expect(boardResponse.status).toBe(200);
+    const board = await boardResponse.json();
+    expect(Object.keys(board).sort()).toEqual([
+      "entries",
+      "nextCursor",
+      "snapshot",
+    ]);
+    expect(board.entries).toHaveLength(1);
+    expect(Object.keys(board.entries[0])).toEqual([
+      ...PUBLIC_LEADERBOARD_FIELDS,
+    ]);
+    expect(board.entries[0]).toMatchObject({ login, score: 13 });
+    const entriesJson = JSON.stringify(board.entries);
+    expect(entriesJson).not.toContain(githubId);
+    expect(entriesJson).not.toContain(id);
+    expect(Object.keys(board.snapshot).sort()).toEqual(["created_at", "id"]);
   });
   it("rejects overlapping placements and deduplicates measurements", async () => {
     const advertiser = crypto.randomUUID();

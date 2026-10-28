@@ -25,12 +25,15 @@ import {
   latestRankingAt,
   ownProfile,
   shareLinks,
+  toPublicLeaderboard,
+  toPublicProfileView,
 } from "./data";
 import {
   agentOwner,
   approveRegistration,
   createRegistration,
   exchangeRegistration,
+  registrationRateLimits,
   registrationSchema,
   registrationStatus,
 } from "./agents";
@@ -74,10 +77,12 @@ export const dispatch = route(async (request: Request) => {
         .max(80)
         .parse(url.searchParams.get("q") || "");
     return json(
-      await cachedLeaderboard(
-        Number(period),
-        q,
-        url.searchParams.get("cursor") || undefined,
+      toPublicLeaderboard(
+        await cachedLeaderboard(
+          Number(period),
+          q,
+          url.searchParams.get("cursor") || undefined,
+        ),
       ),
     );
   }
@@ -88,7 +93,7 @@ export const dispatch = route(async (request: Request) => {
       .parse(endpoint.slice(9));
     const profile = await cachedPublicProfile(login);
     if (!profile) throw new HttpError(404, "profile_not_found");
-    return json(profile);
+    return json(toPublicProfileView(profile));
   }
   if (endpoint === "github/webhook" && method === "POST") {
     const secret = config().GITHUB_WEBHOOK_SECRET;
@@ -126,7 +131,8 @@ export const dispatch = route(async (request: Request) => {
     return json({ ok: true });
   }
   if (endpoint === "v1/agent-registrations" && method === "POST") {
-    await rateLimit(`registration:${clientKey(request)}`, 10, 3600);
+    for (const rule of registrationRateLimits(clientKey(request)))
+      await rateLimit(rule.key, rule.limit, rule.seconds);
     return json(
       await createRegistration(registrationSchema.parse(await body(request))),
       201,
@@ -153,7 +159,8 @@ export const dispatch = route(async (request: Request) => {
     await rateLimit(`agent:${id}`, 120, 60);
     if (endpoint === "v1/me" && method === "GET") {
       const profile = await ownProfile(id);
-      return json(await cachedPublicProfile(profile.login));
+      const view = await cachedPublicProfile(profile.login);
+      return json(view ? toPublicProfileView(view) : null);
     }
     if (endpoint === "v1/me/sync" && method === "GET") {
       const p = await ownProfile(id);
