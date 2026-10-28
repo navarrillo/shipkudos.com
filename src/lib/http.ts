@@ -33,8 +33,25 @@ export function route<T extends unknown[]>(
             },
           },
         );
-      if (error instanceof ZodError || error instanceof SyntaxError)
-        return json({ error: "invalid_request" }, 400);
+      if (error instanceof ZodError)
+        return json(
+          {
+            error: "invalid_request",
+            issues: error.issues.map((issue) => ({
+              path: issue.path.map(String).join("."),
+              message: issue.message,
+            })),
+          },
+          400,
+        );
+      if (error instanceof SyntaxError)
+        return json(
+          {
+            error: "invalid_request",
+            issues: [{ path: "", message: "Malformed JSON" }],
+          },
+          400,
+        );
       console.error(
         JSON.stringify({
           event: "request_error",

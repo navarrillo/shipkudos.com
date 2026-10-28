@@ -308,7 +308,6 @@ describe("agent documentation", () => {
       "invalid_request",
       "missing_body",
       "invalid_credential",
-      "invalid_registration_credential",
       "registration_not_exchangeable",
       "profile_unavailable",
       "github_reconnect_required",

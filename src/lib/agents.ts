@@ -99,7 +99,7 @@ export async function registrationStatus(id: string, token: string) {
       "SELECT * FROM agent_registrations WHERE id=$1 AND token_hash=$2 FOR UPDATE",
       [id, hashSecret(token)],
     );
-    if (!row) throw new HttpError(401, "invalid_registration_credential");
+    if (!row) throw new HttpError(401, "invalid_credential");
     if (
       row.polled_at &&
       Date.now() - new Date(row.polled_at).getTime() <
@@ -118,6 +118,9 @@ export async function registrationStatus(id: string, token: string) {
     return {
       registrationId: id,
       state,
+      ...(state === "pending"
+        ? { authorizationUrl: `${config().APP_URL}/agents/authorize/${id}` }
+        : {}),
       expiresAt: row.expires_at,
       interval: REGISTRATION_POLL_INTERVAL_SECONDS,
     };
@@ -178,7 +181,7 @@ export async function exchangeRegistration(id: string, token: string) {
       "SELECT * FROM agent_registrations WHERE id=$1 AND token_hash=$2 FOR UPDATE",
       [id, hashSecret(token)],
     );
-    if (!row) throw new HttpError(401, "invalid_registration_credential");
+    if (!row) throw new HttpError(401, "invalid_credential");
     if (!canExchangeRegistration(row))
       throw new HttpError(409, "registration_not_exchangeable");
     const {

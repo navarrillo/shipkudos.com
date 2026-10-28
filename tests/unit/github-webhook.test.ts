@@ -176,7 +176,10 @@ describe("GitHub App revocation webhook", () => {
         }),
       );
       expect(response.status).toBe(400);
-      expect(await response.json()).toEqual({ error: "invalid_request" });
+      expect(await response.json()).toEqual({
+        error: "invalid_request",
+        issues: [{ path: "consent", message: expect.any(String) }],
+      });
     }
     expect(sql).not.toHaveBeenCalled();
   });
