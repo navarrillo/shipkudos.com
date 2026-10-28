@@ -1,7 +1,13 @@
 import { Octokit } from "octokit";
 import { getPool, sql, transaction } from "../db";
 import { decryptToken, encryptToken } from "./crypto";
-import { daysAgo, dayUTC, publicCounters, type Counts } from "./domain";
+import {
+  daysAgo,
+  dayUTC,
+  PUBLIC_REPOSITORY_LIMIT,
+  publicCounters,
+  type Counts,
+} from "./domain";
 import { revokeDelegates } from "./queue";
 
 export class GitHubDeferred extends Error {
@@ -105,6 +111,8 @@ export async function syncGitHub(profileId: string): Promise<boolean> {
       !profile.last_full_at ||
       new Date(profile.last_full_at).getTime() < Date.now() - 7 * 86400000;
     const rows: ({ day: string } & Counts)[] = [];
+    const repositoryCounts = (name: string) =>
+      `${name}(maxRepositories:${PUBLIC_REPOSITORY_LIMIT}){repository{isPrivate visibility}contributions(first:1){totalCount}}`;
     for (let offset = 0; offset < (full ? 60 : 7); offset += 10) {
       const fields: string[] = [];
       const dates: string[] = [];
@@ -117,21 +125,13 @@ export async function syncGitHub(profileId: string): Promise<boolean> {
           to = new Date(from.getTime() + 86400000 - 1000);
         dates.push(dayUTC(from));
         fields.push(
-          `d${index}: contributionsCollection(from:"${from.toISOString()}",to:"${to.toISOString()}"){totalCommitContributions totalPullRequestContributions totalIssueContributions totalPullRequestReviewContributions}`,
+          `d${index}: contributionsCollection(from:"${from.toISOString()}",to:"${to.toISOString()}"){totalCommitContributions totalPullRequestContributions totalIssueContributions totalPullRequestReviewContributions ${repositoryCounts("commitContributionsByRepository")} ${repositoryCounts("pullRequestContributionsByRepository")} ${repositoryCounts("issueContributionsByRepository")} ${repositoryCounts("pullRequestReviewContributionsByRepository")}}`,
         );
       }
       await pace();
       const result = await octokit.graphql<{
         rateLimit: { cost: number; remaining: number; resetAt: string };
-        user: Record<
-          string,
-          {
-            totalCommitContributions: number;
-            totalPullRequestContributions: number;
-            totalIssueContributions: number;
-            totalPullRequestReviewContributions: number;
-          }
-        >;
+        user: Record<string, Record<string, unknown>>;
       }>(
         `query($login:String!){rateLimit{cost remaining resetAt} user(login:$login){${fields.join("\n")}}}`,
         {
@@ -161,10 +161,11 @@ export async function syncGitHub(profileId: string): Promise<boolean> {
       const {
         rows: [stillPublished],
       } = await client.query(
-        "SELECT id FROM profiles WHERE id=$1 AND published_at IS NOT NULL AND hidden_at IS NULL FOR UPDATE",
+        "SELECT id,sync_state FROM profiles WHERE id=$1 AND published_at IS NOT NULL AND hidden_at IS NULL FOR UPDATE",
         [profileId],
       );
       if (!stillPublished) return false;
+      const reconnecting = stillPublished.sync_state === "reconnect";
       for (const row of rows)
         await client.query(
           "INSERT INTO daily_stats(profile_id,day,commits,prs,issues,reviews) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(profile_id,day) DO UPDATE SET commits=excluded.commits,prs=excluded.prs,issues=excluded.issues,reviews=excluded.reviews",
@@ -174,7 +175,7 @@ export async function syncGitHub(profileId: string): Promise<boolean> {
         rows.some((r) => r.commits + r.prs + r.issues + r.reviews > 0) ||
         new Date(profile.last_seen_at).getTime() > Date.now() - 7 * 86400000;
       await client.query(
-        "UPDATE profiles SET login=$2,name=$3,avatar=$4,bio=$5,sync_state='ready',sync_error=NULL,last_sync_at=now(),last_full_at=CASE WHEN $6 THEN now() ELSE last_full_at END,next_sync_at=now()+$7*interval '1 hour' WHERE id=$1",
+        "UPDATE profiles SET login=$2,name=$3,avatar=$4,bio=$5,sync_state=$8,sync_error=CASE WHEN $8='reconnect' THEN sync_error ELSE NULL END,last_sync_at=now(),last_full_at=CASE WHEN $6 THEN now() ELSE last_full_at END,next_sync_at=now()+$7*interval '1 hour' WHERE id=$1",
         [
           profileId,
           identity.login,
@@ -183,6 +184,7 @@ export async function syncGitHub(profileId: string): Promise<boolean> {
           identity.bio,
           full,
           active ? 6 : 24,
+          reconnecting ? "reconnect" : "ready",
         ],
       );
       await client.query(

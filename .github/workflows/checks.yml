@@ -39,6 +39,8 @@ jobs:
               - 'bin/**'
               - 'migrations/**'
               - '.github/workflows/**'
+              - 'tests/integration/**'
+              - 'src/lib/github.ts'
   heavy:
     needs: [quick, changes]
     if: ${{ !failure() && !cancelled() && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.infrastructure == 'true') }}
