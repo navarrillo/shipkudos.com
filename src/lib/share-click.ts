@@ -104,16 +104,27 @@ export function watchPageHide(
   };
 }
 
+export function opensExternalPost(intentUrl: string) {
+  try {
+    const host = new URL(intentUrl).hostname;
+    return host === "x.com" || host === "twitter.com";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Phones try the X app composer in this tab. If the page is still visible
  * after {@link APP_OPEN_FALLBACK_MS}, the same tab opens the web intent.
  * Desktop clicks do not call `preventDefault`, so the link opens in a new tab.
+ * A non-X intent (staging, outbound disabled) follows the link and does not open X.
  */
 export function onShareProfileClick(
   event: ShareClickEvent,
   target: ShareProfileTarget,
   env: ShareClickEnvironment,
 ): void {
+  if (!opensExternalPost(target.intentUrl)) return;
   if (!env.mobile) return;
   event.preventDefault();
   const message = shareMessage(target.text, target.profileUrl);

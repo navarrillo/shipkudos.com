@@ -4,6 +4,7 @@ import Image from "next/image";
 import { ShieldCheck, GitFork, ArrowUpRight } from "lucide-react";
 import { cachedPublicProfile, shareLinks } from "@/lib/data";
 import { streak } from "@/lib/domain";
+import { outboundEnabled } from "@/lib/runtime";
 import { explicitPeriod } from "@/lib/share";
 import {
   profileCanonical,
@@ -89,11 +90,13 @@ export default async function Profile({
             <GitFork size={16} />
             GitHub <ArrowUpRight size={14} />
           </a>
-          <ShareProfile
-            text={links.text}
-            profileUrl={links.profileUrl}
-            intentUrl={links.intentUrl}
-          />
+          {outboundEnabled() ? (
+            <ShareProfile
+              text={links.text}
+              profileUrl={links.profileUrl}
+              intentUrl={links.intentUrl}
+            />
+          ) : null}
         </div>
       </section>
       <div className="stats">

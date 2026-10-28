@@ -1,4 +1,5 @@
 import { config } from "./config";
+import { outboundEnabled } from "./runtime";
 import { canonicalUrl } from "./seo";
 import { dayUTC, daysAgo, streak } from "./domain";
 
@@ -174,6 +175,8 @@ export function shareLinks(data: ShareInput, period?: 7 | 30, now = new Date()) 
     `/u/${encodeURIComponent(data.profile.login.toLowerCase())}`,
   );
   const imageUrl = profileCardUrl(data.profile.login, chosen, stats.version);
-  const intentUrl = `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(profileUrl)}`;
+  const intentUrl = outboundEnabled()
+    ? `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(profileUrl)}`
+    : profileUrl;
   return { profileUrl, imageUrl, text, intentUrl, period: chosen };
 }

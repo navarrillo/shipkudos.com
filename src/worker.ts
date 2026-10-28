@@ -8,6 +8,7 @@ import {
   recordGitHubSync,
   type RankState,
 } from "./lib/rankings";
+import { outboundEnabled } from "./lib/runtime";
 const env = requireProductionConfig(),
   instance = randomUUID();
 const boss = new PgBoss({
@@ -52,12 +53,14 @@ try {
     const due = await sql(
       "SELECT id,last_sync_at FROM profiles WHERE published_at IS NOT NULL AND hidden_at IS NULL AND sync_state<>'reconnect' AND (next_sync_at IS NULL OR next_sync_at<=now()) ORDER BY last_sync_at NULLS FIRST LIMIT 100",
     );
-    for (const row of due)
-      await boss.send(
-        "github-sync",
-        { profileId: row.id },
-        { singletonKey: row.id, priority: row.last_sync_at ? 0 : 10 },
-      );
+    if (outboundEnabled()) {
+      for (const row of due)
+        await boss.send(
+          "github-sync",
+          { profileId: row.id },
+          { singletonKey: row.id, priority: row.last_sync_at ? 0 : 10 },
+        );
+    }
     await rebuildRankingsIfDue(ranks, Date.now());
     if (Date.now() - lastClean > 3600000) {
       await sql(

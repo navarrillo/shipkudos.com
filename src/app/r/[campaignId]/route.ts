@@ -1,5 +1,6 @@
 import { recordAdEvent } from "@/lib/ads";
 import { route, HttpError, rateLimit, clientKey } from "@/lib/http";
+import { outboundLocation } from "@/lib/runtime";
 export const GET = route(
   async (
     request: Request,
@@ -16,7 +17,7 @@ export const GET = route(
     );
     return new Response(null, {
       status: 302,
-      headers: { Location: target, "Cache-Control": "no-store" },
+      headers: { Location: outboundLocation(target), "Cache-Control": "no-store" },
     });
   },
 );

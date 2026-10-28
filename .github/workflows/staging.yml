@@ -1,0 +1,17 @@
+name: Staging release
+on:
+  push:
+    branches: [development]
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: staging-release
+  queue: max
+  cancel-in-progress: false
+jobs:
+  verify:
+    uses: ./.github/workflows/heavy.yml
+    with:
+      publish: true
+      channel: development
