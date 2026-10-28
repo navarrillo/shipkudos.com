@@ -292,3 +292,14 @@ export function shareLinks(
 ) {
   return buildShareLinks(data, period);
 }
+/** Stable sample for the agent guide and OpenAPI, matching GET /api/v1/me/share. */
+export const exampleShareInput = {
+  profile: {
+    login: "octocat",
+    name: "The Octocat",
+    tools: [] as string[],
+    last_sync_at: "2026-10-27T21:22:00.000Z",
+  },
+  days: [],
+  ranks: [],
+} satisfies Parameters<typeof buildShareLinks>[0];

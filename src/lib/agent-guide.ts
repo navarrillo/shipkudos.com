@@ -1,5 +1,5 @@
 import { config } from "./config";
-import { shareLinks } from "./data";
+import { exampleShareInput, shareLinks } from "./data";
 import { SCOPES } from "./domain";
 import {
   REGISTRATION_EXCHANGE_MS,
@@ -15,7 +15,7 @@ const exchangeMinutes = REGISTRATION_EXCHANGE_MS / 60000;
 export function agentGuide() {
   const env = config();
   const base = env.APP_URL;
-  const share = shareLinks("octocat", 7);
+  const share = shareLinks(exampleShareInput, 7);
   const createdAt = Date.parse("2026-10-27T23:04:30.000Z");
   const approvedAt = Date.parse("2026-10-27T23:40:00.000Z");
   const created = {
@@ -173,7 +173,7 @@ POST /api/v1/me/sync requests an update. Manual dashboard requests and agent req
 
 A second request during that hour is HTTP 429 \`{"error":"sync_cooldown"}\` with \`Retry-After\` set to the remaining seconds.
 
-GET /api/v1/me/share?period=7 returns \`profileUrl\`, \`imageUrl\` and \`text\`. \`period\` is \`7\` (default) or \`30\`. Any other period returns 400 \`{"error":"invalid_request"}\`.
+GET /api/v1/me/share?period=7 returns \`profileUrl\`, \`imageUrl\`, \`text\`, \`intentUrl\` and \`period\`. The query \`period\` is \`7\` or \`30\`; omit it to use the period where the builder ranks higher. Any other period returns 400 \`{"error":"invalid_request"}\`.
 
 \`\`\`json
 ${JSON.stringify(share, null, 2)}
