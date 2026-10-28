@@ -1,11 +1,6 @@
-import { ImageResponse } from "next/og";
-import { cachedPublicProfile } from "@/lib/data";
-import { config } from "@/lib/config";
-import { socialImages } from "@/lib/social-image";
+import { publicProfile } from "@/lib/profile-data";
+import { renderAndStoreProfileCard, storedProfileCard } from "@/lib/profile-cards";
 import { socialCardResponse } from "@/lib/social";
-import { cardFonts, last30Scores, ProfileCard } from "@/lib/profile-card";
-import { shareStats } from "@/lib/share";
-import { fetchAvatarPng } from "@/lib/avatar-image";
 export const runtime = "nodejs";
 
 export async function GET(
@@ -13,43 +8,36 @@ export async function GET(
   { params }: { params: Promise<{ login: string }> },
 ) {
   const { login } = await params;
-  const data = await cachedPublicProfile(login);
-  if (!data) return new Response("Not found", { status: 404 });
-  const period =
-    new URL(request.url).searchParams.get("period") === "30" ? 30 : 7;
-  const stats = shareStats(data, period);
-  const key = JSON.stringify({
-    login: data.profile.login,
-    name: data.profile.name,
-    avatar: data.profile.avatar,
-    tools: data.profile.tools,
-    period,
-    stats,
-    days: data.days.map((day) => [day.day, day.score]),
-  });
-  return socialCardResponse(
-    socialImages.get(key, async () => {
-      const avatar = await fetchAvatarPng(data.profile.avatar);
-      const host = new URL(config().APP_URL).host;
-      return new ImageResponse(
-        <ProfileCard
-          appName={config().APP_NAME}
-          host={host}
-          login={data.profile.login}
-          name={data.profile.name || data.profile.login}
-          avatar={avatar}
-          tools={data.profile.tools}
-          period={period}
-          position={stats.ranked ? stats.position : null}
-          total={stats.total}
-          score={stats.score}
-          activeDays={stats.activeDays}
-          prs={stats.prs}
-          streak={stats.streak}
-          scores={last30Scores(data.days)}
-        />,
-        { width: 1200, height: 630, fonts: cardFonts },
-      ).arrayBuffer();
-    }),
-  );
+  const query = new URL(request.url).searchParams;
+  const period = query.get("period") === "30" ? 30 : 7;
+  const version = query.get("v") || null;
+  const respond = (bytes: Uint8Array | ArrayBuffer) =>
+    new Response(
+      bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : Uint8Array.from(bytes),
+      {
+        headers: {
+          "Content-Type": "image/png",
+          "Cache-Control": version
+            ? "public, max-age=31536000, immutable"
+            : "public, max-age=86400, stale-while-revalidate=604800",
+        },
+      },
+    );
+  if (!/^[a-z0-9-]{1,39}$/i.test(login)) return socialCardResponse(null);
+  try {
+    try {
+      const stored = await storedProfileCard(login, period, version);
+      if (stored) return respond(stored.png);
+    } catch {
+      // Storage is optional for the on-demand fallback.
+    }
+    const data = await publicProfile(login);
+    if (data) {
+      const { bytes } = await renderAndStoreProfileCard(data, period);
+      if (bytes) return respond(bytes);
+    }
+  } catch {
+    console.error(JSON.stringify({ event: "share_card_fallback", login, period }));
+  }
+  return socialCardResponse(null);
 }

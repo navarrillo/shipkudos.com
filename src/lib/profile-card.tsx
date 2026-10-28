@@ -1,17 +1,17 @@
 /* eslint-disable @next/next/no-img-element -- Satori renders this tree; it is not a browser image. */
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { dayUTC, daysAgo } from "./domain";
 
 const fontFile = (name: string) =>
-  readFileSync(fileURLToPath(new URL(name, import.meta.url)));
+  readFileSync(path.join(process.cwd(), "assets", "fonts", name));
 
 export const cardFonts = [
-  { name: "Geist", data: fontFile("../../assets/fonts/Geist-Regular.ttf"), weight: 400 as const, style: "normal" as const },
-  { name: "Geist", data: fontFile("../../assets/fonts/Geist-Medium.ttf"), weight: 500 as const, style: "normal" as const },
-  { name: "Geist", data: fontFile("../../assets/fonts/Geist-SemiBold.ttf"), weight: 600 as const, style: "normal" as const },
-  { name: "Geist Mono", data: fontFile("../../assets/fonts/GeistMono-Regular.ttf"), weight: 400 as const, style: "normal" as const },
-  { name: "Geist Mono", data: fontFile("../../assets/fonts/GeistMono-Medium.ttf"), weight: 500 as const, style: "normal" as const },
+  { name: "Geist", data: fontFile("Geist-Regular.ttf"), weight: 400 as const, style: "normal" as const },
+  { name: "Geist", data: fontFile("Geist-Medium.ttf"), weight: 500 as const, style: "normal" as const },
+  { name: "Geist", data: fontFile("Geist-SemiBold.ttf"), weight: 600 as const, style: "normal" as const },
+  { name: "Geist Mono", data: fontFile("GeistMono-Regular.ttf"), weight: 400 as const, style: "normal" as const },
+  { name: "Geist Mono", data: fontFile("GeistMono-Medium.ttf"), weight: 500 as const, style: "normal" as const },
 ];
 
 const C = {

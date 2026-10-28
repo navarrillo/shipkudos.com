@@ -3,3 +3,5 @@ await mkdir(".next/standalone/.next/static", { recursive: true });
 await cp(".next/static", ".next/standalone/.next/static", { recursive: true });
 await cp("migrations", ".next/standalone/migrations", { recursive: true });
 await cp("public", ".next/standalone/public", { recursive: true });
+
+await cp("assets/fonts", ".next/standalone/assets/fonts", { recursive: true });
