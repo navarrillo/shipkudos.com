@@ -1,7 +1,6 @@
 import { PgBoss } from "pg-boss";
 import { sql, transaction } from "../db";
 import { HttpError } from "./errors";
-import { outboundEnabled } from "./runtime";
 let promise: Promise<PgBoss> | undefined;
 export function getQueue() {
   promise ??= (async () => {
@@ -22,7 +21,6 @@ export function getQueue() {
   return promise;
 }
 export async function enqueueSync(id: string, manual = false) {
-  if (!outboundEnabled()) return;
   if (manual)
     await transaction(async (client) => {
       const result = await client.query(

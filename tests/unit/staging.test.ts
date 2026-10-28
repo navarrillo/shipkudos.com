@@ -8,13 +8,11 @@ import { resolveRobots } from "next/dist/build/webpack/loaders/metadata/resolve-
 import { Analytics } from "../../src/components/analytics";
 import { StagingMark } from "../../src/components/staging-mark";
 import robots from "../../src/app/robots";
-import { syncGitHub } from "../../src/lib/github";
 import {
   outboundEnabled,
   outboundLocation,
 } from "../../src/lib/runtime";
 import { canonicalUrl, leaderboardMetadata, rootMetadata } from "../../src/lib/seo";
-import { onShareProfileClick } from "../../src/lib/share-click";
 import { shareLinks } from "../../src/lib/share";
 import { umamiScript } from "../../src/lib/umami";
 import { proxy } from "../../src/proxy";
@@ -104,10 +102,12 @@ describe("staging flag", () => {
     );
     const links = shareLinks(shareInput, 7);
     expect(links.profileUrl).toBe("https://shipkudos.com/u/ada");
-    expect(new URL(links.intentUrl).hostname).toBe("x.com");
+    const intent = new URL(links.intentUrl);
+    expect(`${intent.origin}${intent.pathname}`).toBe("https://x.com/intent/post");
+    expect(intent.searchParams.get("url")).toBe("https://shipkudos.com/u/ada");
   });
 
-  it("blocks indexing, analytics, and outbound posts on staging", async () => {
+  it("blocks indexing and analytics on staging and shares the staging profile", () => {
     stagingEnv();
     env.UMAMI_WEBSITE_ID = "prod-website";
     const text = resolveRobots(robots());
@@ -149,31 +149,14 @@ describe("staging flag", () => {
     );
     const links = shareLinks(shareInput, 7);
     expect(links.profileUrl).toBe("https://staging.shipkudos.com/u/ada");
-    expect(links.intentUrl).toBe(links.profileUrl);
+    const intent = new URL(links.intentUrl);
+    expect(`${intent.origin}${intent.pathname}`).toBe("https://x.com/intent/post");
+    expect(intent.searchParams.get("url")).toBe(
+      "https://staging.shipkudos.com/u/ada",
+    );
     expect(links.imageUrl.startsWith("https://staging.shipkudos.com/api/og/")).toBe(
       true,
     );
-    let assigned = "";
-    let cancelled = false;
-    onShareProfileClick(
-      {
-        preventDefault() {
-          cancelled = true;
-        },
-      },
-      links,
-      {
-        mobile: true,
-        assign: (url) => {
-          assigned = url;
-        },
-        onPageHide: () => () => {},
-        schedule: () => () => {},
-      },
-    );
-    expect(cancelled).toBe(false);
-    expect(assigned).toBe("");
-    await expect(syncGitHub("profile-id")).resolves.toBe(false);
   });
 
   it("uses a staging Umami website id only when one is provided", () => {

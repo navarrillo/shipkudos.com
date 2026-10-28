@@ -8,7 +8,6 @@ import {
   publicCounters,
   type Counts,
 } from "./domain";
-import { outboundEnabled } from "./runtime";
 import { revokeDelegates } from "./queue";
 
 export class GitHubDeferred extends Error {
@@ -85,7 +84,6 @@ export async function githubToken(id: string) {
   });
 }
 export async function syncGitHub(profileId: string): Promise<boolean> {
-  if (!outboundEnabled()) return false;
   const [profile] = await sql(
     "SELECT * FROM profiles WHERE id=$1 AND published_at IS NOT NULL AND hidden_at IS NULL",
     [profileId],

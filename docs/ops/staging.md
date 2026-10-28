@@ -54,7 +54,7 @@ Optional names:
 - DEPLOY_READY_TIMEOUT
 - LOCK_TIMEOUT
 
-Staging reads `UMAMI_STAGING_WEBSITE_ID` for analytics. With that name unset, the Umami script is omitted. `UMAMI_SCRIPT_URL` overrides the script URL when a website id is set (HTTPS). `STAGING_OUTBOUND` enables GitHub sync and token refresh, X share posts, and ad clicks that leave the site. While it is unset, those calls no-op. Sign-in can still read the GitHub user API for this OAuth app.
+Staging reads `UMAMI_STAGING_WEBSITE_ID` for analytics. With that name unset, the Umami script is omitted. `UMAMI_SCRIPT_URL` overrides the script URL when a website id is set (HTTPS). GitHub contribution sync and the X share composer run on staging. `STAGING_OUTBOUND` enables ad clicks that leave the site. While it is unset, those redirects stay on the staging origin. Sign-in reads the GitHub user API for this OAuth app.
 
 ## Separate database
 
@@ -62,7 +62,7 @@ Use a staging-only Postgres volume, user, database name, and `DATABASE_URL`. `bi
 
 ## Separate GitHub OAuth app
 
-Create a GitHub App for staging. Put its client id, client secret, and webhook secret only in the staging env file. Homepage, authorization callback (`APP_URL/api/auth/callback/github`), and webhook (`APP_URL/api/github/webhook`) use the staging origin. A separate app keeps token refresh off the production app.
+Create a GitHub App for staging. Put its client id, client secret, and webhook secret only in the staging env file. Homepage, authorization callback (`APP_URL/api/auth/callback/github`), and webhook (`APP_URL/api/github/webhook`) use the staging origin. Staging sync and token refresh use this app, so they do not rotate production tokens.
 
 ## Caddy basic auth
 
@@ -98,6 +98,7 @@ Use a separate directory, for example `~/apps/shipkudos-staging`, with its own `
 - HTML includes a `noindex, nofollow` robots meta tag.
 - A one-line Staging banner shows the host from `APP_URL`.
 - The Umami script is off unless `UMAMI_STAGING_WEBSITE_ID` is set.
-- Outbound sync, token refresh, X posts, and external ad redirects no-op unless `STAGING_OUTBOUND` is enabled.
+- GitHub sync and profile share to X stay on. Share links use the staging `APP_URL`.
+- Ad clicks stay on the staging origin unless `STAGING_OUTBOUND` is enabled.
 
 With `APP_ENV` unset or `production`, robots rules, response headers, the banner, and outbound calls stay as they are on production. The Umami script loads only when `UMAMI_WEBSITE_ID` is set.
