@@ -5,6 +5,11 @@ on:
       publish:
         type: boolean
         required: true
+      channel:
+        description: Empty publishes the production commit SHA. Any other value publishes that channel and channel-sha, never latest, main, or version tags.
+        type: string
+        required: false
+        default: ""
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -75,17 +80,63 @@ jobs:
         if: inputs.publish
         env:
           IMAGE: ghcr.io/${{ github.repository }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -Eeuo pipefail
-          image="${IMAGE,,}:${GITHUB_SHA}"
-          if docker manifest inspect "$image" >/dev/null 2>&1; then
-            docker pull "$image"
-            revision=$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
-            test "$revision" = "$GITHUB_SHA"
-            echo 'Reusing the already published immutable SHA tag'
+          image_repo="${IMAGE,,}"
+          if [[ -n "$CHANNEL" ]]; then
+            if [[ ! "$CHANNEL" =~ ^[a-z0-9][a-z0-9._-]{0,40}$ ]]; then
+              echo "Refusing image channel: $CHANNEL" >&2
+              exit 1
+            fi
+            case "$CHANNEL" in
+              latest|main)
+                echo "Refusing production tag name: $CHANNEL" >&2
+                exit 1
+                ;;
+            esac
+            if [[ "$CHANNEL" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Refusing version tag: $CHANNEL" >&2
+              exit 1
+            fi
+            pinned="${image_repo}:${CHANNEL}-${GITHUB_SHA}"
+            floating="${image_repo}:${CHANNEL}"
+            if docker manifest inspect "$pinned" >/dev/null 2>&1; then
+              docker pull "$pinned"
+              revision=$(docker image inspect "$pinned" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+              test "$revision" = "$GITHUB_SHA"
+              echo "Reusing the already published ${CHANNEL} SHA tag"
+              docker tag "$pinned" "$floating"
+            else
+              docker tag shipkudos:test "$pinned"
+              docker push "$pinned"
+              docker tag shipkudos:test "$floating"
+            fi
+            tip=""
+            if git fetch --no-tags origin "$CHANNEL"; then
+              tip=$(git rev-parse "origin/${CHANNEL}")
+            fi
+            if [[ -n "$tip" && "$GITHUB_SHA" == "$tip" ]]; then
+              docker push "$floating"
+            else
+              echo "Not moving ${floating}; origin/${CHANNEL} is ${tip:-absent}"
+            fi
+            anonymous=$(mktemp -d)
+            docker --config "$anonymous" manifest inspect "$pinned" >/dev/null || { echo 'GHCR package must be public before deployment'; exit 1; }
+            if [[ -n "$tip" && "$GITHUB_SHA" == "$tip" ]]; then
+              docker --config "$anonymous" manifest inspect "$floating" >/dev/null || { echo 'GHCR package must be public before deployment'; exit 1; }
+            fi
           else
-            docker tag shipkudos:test "$image"
-            docker push "$image"
+            image="${image_repo}:${GITHUB_SHA}"
+            if docker manifest inspect "$image" >/dev/null 2>&1; then
+              docker pull "$image"
+              revision=$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+              test "$revision" = "$GITHUB_SHA"
+              echo 'Reusing the already published immutable SHA tag'
+            else
+              docker tag shipkudos:test "$image"
+              docker push "$image"
+            fi
+            anonymous=$(mktemp -d)
+            docker --config "$anonymous" manifest inspect "$image" >/dev/null || { echo 'GHCR package must be public before production deployment'; exit 1; }
           fi
-          anonymous=$(mktemp -d)
-          docker --config "$anonymous" manifest inspect "$image" >/dev/null || { echo 'GHCR package must be public before production deployment'; exit 1; }

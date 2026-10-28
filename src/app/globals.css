@@ -835,6 +835,23 @@ textarea {
     font-size: 26px;
   }
 }
+.staging-banner {
+  margin: 0;
+  padding: 6px 22px;
+  background: #231c10;
+  color: #e6c07b;
+  border-bottom: 1px solid #3d3420;
+  font: 10px/1.4 var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+}
+.staging-banner-host {
+  margin-left: 8px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #b7a27a;
+}
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

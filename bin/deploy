@@ -5,7 +5,22 @@ target=$1
 source "$(dirname -- "$0")/common"
 previous_image=$(state get current image 2>/dev/null || true)
 previous_sha=$(state get current sha 2>/dev/null || true)
-export APP_SHA=$target APP_IMAGE="$IMAGE_REPO:$target"
+# Production pulls the commit SHA. IMAGE_CHANNEL selects a non-production prefix.
+channel=${IMAGE_CHANNEL:-}
+if [[ -n "$channel" ]]; then
+  [[ "$channel" =~ ^[a-z0-9][a-z0-9._-]{0,40}$ ]] || { echo 'Invalid IMAGE_CHANNEL' >&2; exit 2; }
+  case "$channel" in
+    latest|main) echo 'IMAGE_CHANNEL must not select a production tag' >&2; exit 2 ;;
+  esac
+  if [[ "$channel" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo 'IMAGE_CHANNEL must not select a version tag' >&2
+    exit 2
+  fi
+  tag="${channel}-${target}"
+else
+  tag=$target
+fi
+export APP_SHA=$target APP_IMAGE="$IMAGE_REPO:$tag"
 docker pull "$APP_IMAGE"
 digest=''
 while IFS= read -r candidate; do

@@ -1,6 +1,7 @@
 # Operations on Helios (production VPS)
 
 Production: https://shipkudos.com (www.shipkudos.com → 301 to apex). Repo: navarrillo/shipkudos.com.
+Staging (staging.shipkudos.com, branch `development`) is a separate database, OAuth app, and image channel. See [staging.md](staging.md).
 Everything runs as the unprivileged `deploy` user under `/home/deploy/apps/shipkudos` (the operator's layout; the repo defaults `/etc/shipkudos/.env` etc. are overridden in the env file). No GitHub runner, no SSH from Actions.
 
 ## 1. Release model (pull)
