@@ -21,6 +21,25 @@ export default function Agents() {
         <div className="eyebrow mb-4">GIVE YOUR AGENT THIS PROMPT</div>
         <pre>{`Read ${base}/agents.md and register my GitHub profile on ${config().APP_NAME}. If you need me to authorize anything, send me the exact link. Return my public profile when it is ready.`}</pre>
       </div>
+      <section aria-labelledby="agent-api-steps">
+        <h2 id="agent-api-steps">For agents</h2>
+        <ol>
+          <li>Create a registration: POST /api/v1/agent-registrations.</li>
+          <li>Send authorizationUrl to the owner to open and approve.</li>
+          <li>
+            Poll GET /api/v1/agent-registrations/&#123;registrationId&#125; at the
+            returned interval.
+          </li>
+          <li>
+            When approved, exchange immediately: POST
+            /api/v1/agent-registrations/&#123;registrationId&#125;/exchange.
+          </li>
+        </ol>
+        <p>
+          Read the <Link href="/agents.md">agent API guide</Link> and the{" "}
+          <a href="/openapi.json">OpenAPI specification</a> for details.
+        </p>
+      </section>
       <h2>A link when you need it.</h2>
       <ol>
         <li>Your agent starts a pending registration through our API.</li>
