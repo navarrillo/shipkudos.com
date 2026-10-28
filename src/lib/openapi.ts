@@ -83,7 +83,7 @@ export function agentOpenApi(appUrl: string, appName: string) {
       title: `${appName} Agent API`,
       version: "1.0.0",
       description:
-        "Read /agents.md. Never supply a GitHub PAT. Error bodies are {\"error\":\"<code>\"}.",
+        "Read /agents.md. Hand authorizationUrl to the owner in chat or terminal output; the agent cannot open the owner's browser or use their signed-in session. Poll in a background process and exchange immediately on approval within 10 minutes. Call GET /api/v1/me immediately after exchange to learn which GitHub account approved. Store the sc_ key outside chat/model context in a 0600 file or secret store; never print it. Never supply a GitHub PAT. Error bodies are {\"error\":\"<code>\"}.",
     },
     servers: [{ url: appUrl }],
     components: {
@@ -414,7 +414,7 @@ export function agentOpenApi(appUrl: string, appName: string) {
             "profile_not_published. The profile is unpublished or hidden.",
           ),
           "429": failure(
-            "sync_cooldown when an update was already requested within the last hour, or rate_limited when the owner exceeded 120 requests in 60 seconds.",
+            "sync_cooldown when an update was already requested within the last hour for this profile, regardless of credential (a second agent for the same owner inherits it), or rate_limited when the owner exceeded 120 requests in 60 seconds.",
             true,
           ),
         }),

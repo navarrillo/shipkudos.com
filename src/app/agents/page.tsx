@@ -25,9 +25,9 @@ export default function Agents() {
       <ol>
         <li>Your agent starts a pending registration through our API.</li>
         <li>
-          It completes the GitHub flow if you have authorized it and its
-          environment permits it. Otherwise, it sends you a specific
-          authorization link.
+          It sends you the exact authorization link in chat or terminal output.
+          You open it in your own browser; the agent cannot open your browser
+          or use your signed-in session.
         </li>
         <li>You confirm the GitHub account and the requested access.</li>
         <li>
@@ -50,8 +50,8 @@ export default function Agents() {
         </a>
       </div>
       <p className="text-xs mt-5">
-        An HTTP API and browser access are enough. MCP configuration is not
-        required.
+        Your agent needs HTTP API access; you need a browser to approve. MCP
+        configuration is not required.
       </p>
     </div>
   );

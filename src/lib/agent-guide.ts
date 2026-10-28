@@ -102,7 +102,7 @@ Malformed JSON or a body that fails validation returns 400 \`{"error":"invalid_r
 
 ## 2. Ask the user to approve
 
-Open \`authorizationUrl\` in your browser if your user has authorized you to complete registration. Otherwise give that exact link to your user. GitHub may require login or approval. Do not request a GitHub PAT or password and do not bypass a verification step.
+Give the exact \`authorizationUrl\` to your user in chat, terminal output or another channel they can read. You cannot open the owner's browser or use their signed-in session; the owner must open the link and complete GitHub login or approval within the 60-minute pending window. Do not request a GitHub PAT or password and do not bypass a verification step.
 
 Approving publishes the user's profile if it is not already published. Tell your user that before they approve. The authorization page asks them to confirm publication and the permissions listed there.
 
@@ -120,6 +120,8 @@ ${JSON.stringify(approved, null, 2)}
 
 GET /api/v1/agent-registrations/{registrationId}
 Authorization: Bearer {registrationToken}
+
+Poll in a background process so polling continues between chat turns, and exchange immediately when \`state\` becomes \`approved\`. An agent that acts only on chat turns can miss the 10-minute exchange window.
 
 Wait at least \`interval\` seconds (${REGISTRATION_POLL_INTERVAL_SECONDS}) between polls. A faster poll returns HTTP 429 \`{"error":"poll_too_fast"}\` and \`Retry-After: ${REGISTRATION_POLL_INTERVAL_SECONDS}\`.
 
@@ -143,9 +145,9 @@ Example 200 response:
 ${JSON.stringify(exchanged, null, 2)}
 \`\`\`
 
-The ShipKudos token (\`token\`, prefix \`sc_\`) is returned only once and expires after 90 days. \`tokenType\` is \`Bearer\`. The example was exchanged at 2026-10-27T23:40:00.000Z, so its \`expiresAt\` is 90 days later. If you lose the token, ask your user to revoke the grant and start again. A second exchange, or an exchange while the registration is not \`approved\`, returns 409 \`{"error":"registration_not_exchangeable"}\`.
+The ShipKudos token (\`token\`, prefix \`sc_\`) is returned only once and expires after 90 days. Store it outside the chat/model context, for example in a file with mode 0600 or a secret store. Never print it or include it in logs or chat. \`tokenType\` is \`Bearer\`. The example was exchanged at 2026-10-27T23:40:00.000Z, so its \`expiresAt\` is 90 days later. If you lose the token, ask your user to revoke the grant and start again. A second exchange, or an exchange while the registration is not \`approved\`, returns 409 \`{"error":"registration_not_exchangeable"}\`.
 
-After the exchange, call GET /api/v1/me and confirm with your user that the returned \`login\` (\`profile.login\`) is theirs before you rely on the credential. If it is someone else, stop and ask them to revoke the key in /dashboard.
+Immediately after the exchange, call GET /api/v1/me to learn which GitHub account approved; you cannot know that before this call. Read the response and confirm with your user that the returned \`login\` (\`profile.login\`) is theirs before you rely on the credential. If it is someone else, stop and ask them to revoke the key in /dashboard.
 
 ## 5. Read the profile, sync and share
 
@@ -171,7 +173,7 @@ POST /api/v1/me/sync requests an update. Manual dashboard requests and agent req
 {"state":"queued"}
 \`\`\`
 
-A second request during that hour is HTTP 429 \`{"error":"sync_cooldown"}\` with \`Retry-After\` set to the remaining seconds.
+The cooldown is per profile, not per credential: a second agent for the same owner inherits it. A second request during that hour is HTTP 429 \`{"error":"sync_cooldown"}\` with \`Retry-After\` set to the remaining seconds.
 
 GET /api/v1/me/share?period=7 returns \`profileUrl\`, \`imageUrl\`, \`text\`, \`intentUrl\` and \`period\`. The query \`period\` is \`7\` or \`30\`; omit it to use the period where the builder ranks higher. Any other period returns 400 \`{"error":"invalid_request"}\`.
 
